@@ -178,7 +178,8 @@ def validate_nickname(nickname: str) -> str | None:
     return None
 
 
-async def nickname_occupied(group_id: str, nickname: str, user_id: str) -> bool:
+async def nickname_occupied(group_id: str, nickname: str, user_id: str) -> str | None:
+    """检查昵称是否被其他用户占用,返回占用者的 user_id,如果未被占用则返回 None"""
     row = await db.fetch_one(
         """
         SELECT user_id
@@ -188,7 +189,7 @@ async def nickname_occupied(group_id: str, nickname: str, user_id: str) -> bool:
         """,
         (group_id, nickname, user_id),
     )
-    return row is not None
+    return row["user_id"] if row else None
 
 
 async def add_nickname_record(group_id: str, user_id: str, nickname: str) -> bool:
@@ -287,7 +288,7 @@ async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
     if not nickname:
         existing = await fetch_user_nicknames(str(event.group_id), at_qq)
         if existing:
-            await add_nickname_matcher.finish("该用户的昵称：" + ", ".join(existing))
+            await add_nickname_matcher.finish("该用户的昵称:" + ", ".join(existing))
         else:
             await add_nickname_matcher.finish("该用户没有任何昵称")
         return
@@ -299,14 +300,26 @@ async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
 
     group_id = str(event.group_id)
 
-    if await nickname_occupied(group_id, nickname, at_qq):
-        await add_nickname_matcher.finish(f"昵称'{nickname}'已被其他用户占用！")
+    occupied_user_id = await nickname_occupied(group_id, nickname, at_qq)
+    if occupied_user_id:
+        try:
+            member_info = await bot.get_group_member_info(
+                group_id=int(group_id), user_id=int(occupied_user_id)
+            )
+            occupied_user_name = (
+                member_info.get("card") or member_info.get("nickname") or occupied_user_id
+            )
+        except Exception as e:
+            logger.warning(f"获取用户 {occupied_user_id} 信息失败: {e}")
+            occupied_user_name = occupied_user_id
+
+        await add_nickname_matcher.finish(f"昵称'{nickname}'已被 {occupied_user_name} 占用!")
         return
 
     if await add_nickname_record(group_id, at_qq, nickname):
-        await add_nickname_matcher.finish(f"昵称'{nickname}'成功绑定到用户！")
+        await add_nickname_matcher.finish(f"昵称'{nickname}'成功绑定到用户!")
     else:
-        await add_nickname_matcher.finish(f"用户已有昵称'{nickname}'！")
+        await add_nickname_matcher.finish(f"用户已有昵称'{nickname}'!")
 
 
 replace_nickname_matcher = on_message(rule=is_replacing_nickname, priority=10, block=False)
