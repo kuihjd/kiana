@@ -4,6 +4,7 @@ import json
 import re
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import aiohttp
@@ -72,6 +73,8 @@ PRICE_HISTORY_LIMIT = max(86400, config.price_history_limit)
 MIN_WINDOW_SECONDS = config.min_window_seconds
 CHART_WINDOW_SECONDS = max(MIN_WINDOW_SECONDS, config.chart_window_hours * 3600)
 price_history: deque[tuple[float, float]] = deque(maxlen=PRICE_HISTORY_LIMIT)
+
+_chart_executor = ThreadPoolExecutor(max_workers=1)
 
 scheduler = require("nonebot_plugin_apscheduler").scheduler
 driver = get_driver()
@@ -177,11 +180,18 @@ async def record_price():
     if not config.gold_plugin_enabled:
         return
 
-    current_time = time.time()
-
     price = await fetch_gold_price()
-    if price is not None:
-        await persist_price(current_time, price)
+    if price is None:
+        return
+
+    if price_history:
+        last_price = price_history[-1][1]
+        if last_price == price:
+            logger.debug(f"金价未变化 ({price})，跳过记录")
+            return
+
+    current_time = time.time()
+    await persist_price(current_time, price)
 
 
 def generate_chart(window_seconds: int | None = None) -> bytes:
@@ -274,7 +284,8 @@ async def _(bot: Bot, event: Event, matches: tuple[str, str] = RegexGroup()):
         custom_window = parsed_window
 
     try:
-        image_data = generate_chart(custom_window)
+        loop = asyncio.get_event_loop()
+        image_data = await loop.run_in_executor(_chart_executor, generate_chart, custom_window)
         await gold_chart.send(MessageSegment.image(image_data))
     except Exception as e:
         await gold_chart.send(f"生成图表失败: {e!s}")
