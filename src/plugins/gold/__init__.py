@@ -66,8 +66,61 @@ gold_chart = on_regex(
     block=True,
 )
 
-# 存储冷却时间的字典，每个群单独冷却
-cooldown_dict = {}
+
+class CooldownManager:
+    """冷却管理器"""
+
+    def __init__(self, cleanup_interval: int = 3600, max_age: int = 86400):
+        """初始化冷却管理器
+
+        Args:
+            cleanup_interval: 清理检查间隔（秒），默认1小时
+            max_age: 冷却记录最大保留时间（秒），默认24小时
+        """
+        self._data: dict[int, float] = {}  # group_id -> last_call_time
+        self._cleanup_interval = cleanup_interval
+        self._max_age = max_age
+        self._last_cleanup = time.time()
+
+    def _maybe_cleanup(self) -> None:
+        """检查并执行过期记录清理"""
+        current_time = time.time()
+        if current_time - self._last_cleanup < self._cleanup_interval:
+            return
+
+        # 清理超过 max_age 的记录
+        expired_keys = [k for k, v in self._data.items() if current_time - v > self._max_age]
+        for key in expired_keys:
+            del self._data[key]
+
+        if expired_keys:
+            logger.debug(f"冷却管理器清理了 {len(expired_keys)} 条过期记录")
+
+        self._last_cleanup = current_time
+
+    def get_remaining_cooldown(self, group_id: int, cooldown_time: int) -> int:
+        """获取剩余冷却时间
+
+        Args:
+            group_id: 群组ID
+            cooldown_time: 冷却时间（秒）
+
+        Returns:
+            剩余冷却秒数，0 表示不在冷却中
+        """
+        self._maybe_cleanup()
+        current_time = time.time()
+        last_call = self._data.get(group_id, 0)
+        remaining = int(last_call + cooldown_time - current_time)
+        return max(0, remaining)
+
+    def update(self, group_id: int) -> None:
+        """更新群组的最后调用时间"""
+        self._data[group_id] = time.time()
+
+
+# 使用带自动清理的冷却管理器
+cooldown_manager = CooldownManager()
 
 PRICE_HISTORY_LIMIT = max(86400, config.price_history_limit)
 MIN_WINDOW_SECONDS = config.min_window_seconds
@@ -196,60 +249,54 @@ async def record_price():
 
 def generate_chart(window_seconds: int | None = None) -> bytes:
     """生成金价走势图"""
-    plt.style.use("bmh")
+    fig = None
+    try:
+        plt.style.use("bmh")
+        fig = plt.figure(figsize=(12, 6))
 
-    plt.figure(figsize=(12, 6))
-    plt.clf()
+        effective_window = (
+            CHART_WINDOW_SECONDS
+            if window_seconds is None
+            else max(MIN_WINDOW_SECONDS, window_seconds)
+        )
+        cutoff = time.time() - effective_window
+        window_data = [(t, p) for t, p in price_history if t >= cutoff]
+        if len(window_data) < 2:
+            window_data = list(price_history)
 
-    effective_window = (
-        CHART_WINDOW_SECONDS if window_seconds is None else max(MIN_WINDOW_SECONDS, window_seconds)
-    )
-    cutoff = time.time() - effective_window
-    window_data = [(t, p) for t, p in price_history if t >= cutoff]
-    if len(window_data) < 2:
-        window_data = list(price_history)
+        times, prices = zip(*window_data, strict=False)
+        # 转换为本地时间
+        times = [datetime.fromtimestamp(t).astimezone() for t in times]
 
-    times, prices = zip(*window_data, strict=False)
-    # 转换为本地时间
-    times = [datetime.fromtimestamp(t).astimezone() for t in times]
+        plt.plot(times, prices)
+        plt.grid(True)
 
-    plt.plot(times, prices)
-    plt.grid(True)
+        fig.autofmt_xdate()
 
-    # 自动调整x轴日期格式
-    plt.gcf().autofmt_xdate()
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="PNG")
-    buf.seek(0)
-    return buf.getvalue()
+        buf = io.BytesIO()
+        plt.savefig(buf, format="PNG")
+        buf.seek(0)
+        return buf.getvalue()
+    finally:
+        if fig is not None:
+            plt.close(fig)
 
 
 # 群聊处理器（带冷却）
 @gold.handle()
 async def handle_group_gold_query(bot: Bot, event: GroupMessageEvent) -> None:
     """处理群聊金价查询（带冷却机制）"""
-    current_time = time.time()
     group_id = event.group_id  # 类型安全：GroupMessageEvent 一定有 group_id
 
     # 检查是否在冷却时间内
-    if (
-        cooldown_dict.get(group_id, {}).get("last_call_time", 0) + config.cooldown_time
-        > current_time
-    ):
-        remaining_time = int(
-            cooldown_dict[group_id]["last_call_time"] + config.cooldown_time - current_time
-        )
-        if remaining_time == 0:
-            remaining_time = 1
+    remaining_time = cooldown_manager.get_remaining_cooldown(group_id, config.cooldown_time)
+    if remaining_time > 0:
         await gold.finish(f"冷却中，请等待 {remaining_time} 秒后再试")
 
     price = await fetch_gold_price()
     if price is not None:
         # 更新冷却时间
-        if group_id not in cooldown_dict:
-            cooldown_dict[group_id] = {}
-        cooldown_dict[group_id]["last_call_time"] = current_time
+        cooldown_manager.update(group_id)
         await gold.finish(f"{price}")
     else:
         await gold.finish("获取金价失败")
