@@ -13,7 +13,6 @@ from nonebot.adapters.onebot.v11 import (
     Message,
     MessageSegment,
 )
-from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
 
 from src.storage import get_db
@@ -650,9 +649,7 @@ def is_clearing_nickname(event: GroupMessageEvent) -> bool:
 
 
 delete_nickname_matcher = on_message(rule=is_deleting_nickname, priority=5, block=True)
-clear_nickname_matcher = on_message(
-    rule=is_clearing_nickname, priority=5, block=True, permission=SUPERUSER
-)
+clear_nickname_matcher = on_message(rule=is_clearing_nickname, priority=5, block=True)
 
 
 def parse_delete_command(text: str) -> list[str] | None:
@@ -803,19 +800,6 @@ async def handle_group_decrease(bot: Bot, event: GroupDecreaseNoticeEvent) -> No
         )
 
 
-async def is_group_admin_or_superuser(bot: Bot, event: GroupMessageEvent) -> bool:
-    """检查用户是否为群管理员、群主或超级用户"""
-    if await SUPERUSER(bot, event):
-        return True
-    try:
-        member_info = await bot.get_group_member_info(
-            group_id=event.group_id, user_id=event.user_id
-        )
-        return member_info.get("role") in ("admin", "owner")
-    except Exception:
-        return False
-
-
 def is_managing_collection(event: GroupMessageEvent) -> bool:
     """检查是否为集合管理命令: 集合 xxx @人"""
     text = event.message.extract_plain_text().strip()
@@ -887,10 +871,6 @@ async def get_member_names(bot: Bot, group_id: int, user_ids: list[str]) -> dict
 
 @manage_collection_matcher.handle()
 async def handle_manage_collection(bot: Bot, event: GroupMessageEvent) -> None:
-    if not await is_group_admin_or_superuser(bot, event):
-        await manage_collection_matcher.finish("仅管理员可以管理集合")
-        return
-
     text = event.message.extract_plain_text().strip()
     collection_name = parse_collection_name_from_command(text, "集合 ")
 
@@ -986,10 +966,6 @@ async def handle_list_collections(bot: Bot, event: GroupMessageEvent) -> None:
 
 @remove_from_collection_matcher.handle()
 async def handle_remove_from_collection(bot: Bot, event: GroupMessageEvent) -> None:
-    if not await is_group_admin_or_superuser(bot, event):
-        await remove_from_collection_matcher.finish("仅管理员可以管理集合")
-        return
-
     text = event.message.extract_plain_text().strip()
     collection_name = parse_collection_name_from_command(text, "移除集合 ")
 
@@ -1028,10 +1004,6 @@ async def handle_remove_from_collection(bot: Bot, event: GroupMessageEvent) -> N
 
 @delete_collection_matcher.handle()
 async def handle_delete_collection(bot: Bot, event: GroupMessageEvent) -> None:
-    if not await is_group_admin_or_superuser(bot, event):
-        await delete_collection_matcher.finish("仅管理员可以删除集合")
-        return
-
     text = event.message.extract_plain_text().strip()
     collection_name = parse_collection_name_from_command(text, "删除集合 ")
 
