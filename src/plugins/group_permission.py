@@ -68,7 +68,7 @@ def create_group_rule(
     config_getter: Callable[[], Any],
     plugin_enabled_attr: str,
     prefix: str = "",
-) -> Callable[[Event], bool]:
+) -> Callable[[Event], Any]:
     """创建群组规则检查函数
 
     Args:
@@ -109,7 +109,7 @@ def create_sub_feature_rule(
     plugin_enabled_attr: str,
     feature_enabled_attr: str,
     prefix: str = "",
-) -> Callable[[Event], bool]:
+) -> Callable[[Event], Any]:
     """创建带子功能开关的群组规则检查函数
 
     用于有多个子功能的插件（如 Gold 插件有价格查询和走势图两个功能）
@@ -162,7 +162,7 @@ def create_sub_feature_rule(
 def create_platform_rule(
     config_getter: Callable[[], Any],
     platform: str,
-) -> Callable[[Event], bool]:
+) -> Callable[[Event], Any]:
     """为多平台插件创建平台特定的群组规则检查函数
 
     Args:

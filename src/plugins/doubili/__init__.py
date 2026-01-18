@@ -26,7 +26,8 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-config = get_plugin_config(Config)
+config: Config = get_plugin_config(Config)
+
 
 def parse_card_message(event: MessageEvent) -> tuple[str | None, str | None]:
     """从腾讯卡片消息提取链接和标题（统一解析入口）

@@ -38,16 +38,20 @@ __plugin_meta__ = PluginMetadata(
         "- 个股(需带交易所): 000001.SZ、600000.SH、43123456.BJ\n"
         "- 指数: 000001.SH、399001.SZ"
     ),
-    config=Config(),
+    config=Config,
 )
 
 
 # 延迟加载插件配置（避免在模块导入时初始化）
+_cached_plugin_config: Config | None = None
+
+
 def _get_plugin_config() -> Config:
     """获取插件配置，使用缓存避免重复获取"""
-    if not hasattr(_get_plugin_config, "_cached_config"):
-        _get_plugin_config._cached_config = get_plugin_config(Config)
-    return _get_plugin_config._cached_config
+    global _cached_plugin_config
+    if _cached_plugin_config is None:
+        _cached_plugin_config = get_plugin_config(Config)
+    return _cached_plugin_config
 
 
 # 默认配置常量（当 NoneBot 未初始化时使用）
@@ -68,12 +72,16 @@ def _get_config_value(attr_name: str, default_value: Any) -> Any:
 
 
 # 延迟初始化缓存管理器
+_cached_cache_manager: FundDataCacheManager | None = None
+
+
 def _get_cache_manager() -> FundDataCacheManager:
     """获取缓存管理器实例"""
-    if not hasattr(_get_cache_manager, "_cache_manager"):
+    global _cached_cache_manager
+    if _cached_cache_manager is None:
         max_size = _get_config_value("fund_max_cache_size", 100)
-        _get_cache_manager._cache_manager = FundDataCacheManager(max_size=max_size)
-    return _get_cache_manager._cache_manager
+        _cached_cache_manager = FundDataCacheManager(max_size=max_size)
+    return _cached_cache_manager
 
 
 # ==================== Rule 检查函数 ====================
@@ -219,7 +227,7 @@ def _normalize_etf_data_from_ths(df: pd.DataFrame) -> pd.DataFrame:
     return new_df
 
 
-async def get_etf_spot_data_cached() -> pd.DataFrame:
+async def get_etf_spot_data_cached() -> pd.DataFrame | None:
     """获取ETF实时数据（带线程安全缓存）
 
     实现了智能缓存和多数据源切换策略：
@@ -363,6 +371,9 @@ async def get_market_fund_data(fund_code: str, fund_type: Literal["etf", "lof"])
         else:
             spot_df = await get_lof_spot_data_cached()
             hist_func = ak.fund_lof_hist_em
+
+        if spot_df is None:
+            return {"success": False, "error": "无法获取实时数据"}
 
         # 查找指定基金
         fund_info = spot_df[spot_df["代码"] == fund_code]
@@ -569,14 +580,14 @@ def _extract_price_data(latest: pd.Series, previous: pd.Series | None) -> dict |
         包含价格信息的字典，如果数据异常则返回 None
     """
     try:
-        latest_price = float(latest.get("close", 0))
-        open_price = float(latest.get("open", 0))
-        high = float(latest.get("high", 0))
-        low = float(latest.get("low", 0))
+        latest_price = float(latest.get("close") or 0)
+        open_price = float(latest.get("open") or 0)
+        high = float(latest.get("high") or 0)
+        low = float(latest.get("low") or 0)
 
         # 计算涨跌幅和涨跌额
         if previous is not None:
-            previous_close = float(previous.get("close", 0))
+            previous_close = float(previous.get("close") or 0)
             change_amount = latest_price - previous_close
             change_pct = (change_amount / previous_close * 100) if previous_close != 0 else 0
         else:

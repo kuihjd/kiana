@@ -68,9 +68,7 @@ async def check_bot_mute_status(bot: Bot, event: MessageEvent, matcher: Matcher)
     # 缓存过期或不存在，重新查询
     try:
         member_info = await bot.get_group_member_info(
-            group_id=group_id,
-            user_id=int(bot.self_id),
-            no_cache=True
+            group_id=group_id, user_id=int(bot.self_id), no_cache=True
         )
 
         shut_up_timestamp = member_info.get("shut_up_timestamp", 0)
@@ -84,8 +82,7 @@ async def check_bot_mute_status(bot: Bot, event: MessageEvent, matcher: Matcher)
             remaining_minutes = int(remaining_seconds // 60)
 
             logger.warning(
-                f"检测到机器人在群 {group_id} 中被禁言，"
-                f"剩余 {remaining_minutes} 分钟，跳过消息处理"
+                f"检测到机器人在群 {group_id} 中被禁言，剩余 {remaining_minutes} 分钟，跳过消息处理"
             )
             raise IgnoredException("Bot is muted in this group")
 
@@ -129,7 +126,7 @@ async def handle_send_message_error(
     # 检查是否为禁言/权限相关错误
     # retcode 1200: 通用发送失败（通常是禁言）
     # retcode 120: 权限不足
-    retcode = exception.retcode
+    retcode = getattr(exception, "retcode", None)
     if retcode not in (1200, 120):
         return
 
@@ -140,8 +137,7 @@ async def handle_send_message_error(
 
     # 记录错误但不重新抛出，避免bot崩溃
     logger.warning(
-        f"捕获到发送消息失败错误 (retcode={retcode}) "
-        f"{group_info} - 可能是机器人被禁言或权限不足"
+        f"捕获到发送消息失败错误 (retcode={retcode}) {group_info} - 可能是机器人被禁言或权限不足"
     )
     logger.debug(f"错误详情: {exception}")
 

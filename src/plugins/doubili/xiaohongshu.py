@@ -19,7 +19,7 @@ class ParseResult:
     title: str
     cover_url: str
     video_url: str = ""
-    pic_urls: list[str] = None
+    pic_urls: list[str] | None = None
     author: str = ""
 
 

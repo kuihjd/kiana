@@ -26,7 +26,7 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-config = get_plugin_config(Config)
+config: Config = get_plugin_config(Config)
 
 db = get_db()
 db.ensure_schema(

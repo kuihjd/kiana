@@ -15,7 +15,7 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-config = get_plugin_config(Config)
+config: Config = get_plugin_config(Config)
 
 is_chat_forward_enabled = create_sub_feature_rule(
     config_getter=lambda: config,

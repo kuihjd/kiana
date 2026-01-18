@@ -34,7 +34,7 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-config = get_plugin_config(Config)
+config: Config = get_plugin_config(Config)
 
 
 # ==================== Rule 检查函数 ====================
@@ -266,9 +266,9 @@ def generate_chart(window_seconds: int | None = None) -> bytes:
 
         times, prices = zip(*window_data, strict=False)
         # 转换为本地时间
-        times = [datetime.fromtimestamp(t).astimezone() for t in times]
+        times_dt = [datetime.fromtimestamp(t).astimezone() for t in times]
 
-        plt.plot(times, prices)
+        plt.plot(times_dt, prices)  # type: ignore[arg-type]
         plt.grid(True)
 
         fig.autofmt_xdate()

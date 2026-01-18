@@ -47,7 +47,7 @@ class SafeCache[T]:
     async def get_or_update(
         self,
         key: str,
-        fetch_func: Callable[[], T],
+        fetch_func: Callable[[], Any],
         ttl_minutes: int,
         data_type: str = "data",
     ) -> T:
