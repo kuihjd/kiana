@@ -573,9 +573,7 @@ requires-dist = [
     { name = "nonebot-plugin-alconna", specifier = ">=0.53.1" },
     { name = "nonebot-plugin-apscheduler", specifier = ">=0.5.0" },
     { name = "nonebot-plugin-withdraw", specifier = ">=0.4.0" },
-    { name = "nonebot2", extras = ["fastapi"], specifier = ">=2.2.1" },
-    { name = "nonebot2", extras = ["httpx"], specifier = ">=2.2.1" },
-    { name = "nonebot2", extras = ["websockets"], specifier = ">=2.2.1" },
+    { name = "nonebot2", extras = ["fastapi", "httpx", "websockets"], specifier = ">=2.2.1" },
     { name = "numpy", specifier = ">=2.3.0" },
     { name = "pydantic-core", specifier = ">=2.27.0" },
 ]
