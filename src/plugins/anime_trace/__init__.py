@@ -42,7 +42,7 @@ async def handle_anime_trace(
     bot: Bot,
     event: MessageEvent,
     state: T_State,
-    msg: Message = CommandArg(),  # noqa: B008
+    msg: Message = CommandArg(),
 ):
     # 首先检查是否是回复消息
     if event.reply:

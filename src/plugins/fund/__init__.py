@@ -48,7 +48,7 @@ _cached_plugin_config: Config | None = None
 
 def _get_plugin_config() -> Config:
     """获取插件配置，使用缓存避免重复获取"""
-    global _cached_plugin_config
+    global _cached_plugin_config  # noqa: PLW0603
     if _cached_plugin_config is None:
         _cached_plugin_config = get_plugin_config(Config)
     return _cached_plugin_config
@@ -77,7 +77,7 @@ _cached_cache_manager: FundDataCacheManager | None = None
 
 def _get_cache_manager() -> FundDataCacheManager:
     """获取缓存管理器实例"""
-    global _cached_cache_manager
+    global _cached_cache_manager  # noqa: PLW0603
     if _cached_cache_manager is None:
         max_size = _get_config_value("fund_max_cache_size", 100)
         _cached_cache_manager = FundDataCacheManager(max_size=max_size)

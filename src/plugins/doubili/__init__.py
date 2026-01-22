@@ -29,6 +29,68 @@ __plugin_meta__ = PluginMetadata(
 config: Config = get_plugin_config(Config)
 
 
+def _extract_card_data(event: MessageEvent) -> dict[str, Any] | None:
+    """从消息中提取卡片 JSON 数据"""
+    for seg in event.message:
+        if seg.type == "json" and (data := seg.data.get("data")):
+            try:
+                return json.loads(data) if isinstance(data, str) else data
+            except json.JSONDecodeError as e:
+                logger.debug(f"JSON卡片解析失败: {e}")
+    return None
+
+
+def _parse_miniapp(meta: dict[str, Any], app: str) -> tuple[str | None, str | None]:
+    """解析小程序卡片"""
+    detail = meta.get("detail_1", {})
+    url = detail.get("qqdocurl") or detail.get("url")
+    title = detail.get("desc") or detail.get("title")
+    if url:
+        logger.debug(f"腾讯卡片解析 - 小程序卡片，app={app}")
+    return (url, title)
+
+
+def _parse_view_based(meta: dict[str, Any], view: str, app: str) -> tuple[str | None, str | None]:
+    """解析基于 view 的卡片（图文/音乐/结构化消息）"""
+    view_data = meta.get(view, {}) if view else meta.get("news", {})
+    url = view_data.get("jumpUrl")
+    title = view_data.get("title")
+    if url:
+        logger.debug(f"腾讯卡片解析 - 图文/音乐分享，app={app}, view={view}")
+    return (url, title)
+
+
+def _parse_channel(meta: dict[str, Any], app: str) -> tuple[str | None, str | None]:
+    """解析频道分享卡片"""
+    detail = meta.get("detail", {})
+    url = detail.get("link")
+    title = detail.get("title")
+    if url:
+        logger.debug(f"腾讯卡片解析 - 频道分享，app={app}")
+    return (url, title)
+
+
+def _parse_fallback(meta: dict[str, Any], app: str) -> tuple[str | None, str | None]:
+    """通用回退解析"""
+    news = meta.get("news")
+    if not news:
+        return (None, None)
+    url = news.get("jumpUrl")
+    title = news.get("title")
+    if url:
+        logger.debug(f"腾讯卡片解析 - 通用回退(news)，app={app}")
+    return (url, title)
+
+
+_CARD_PARSERS: dict[str, Any] = {
+    "com.tencent.miniapp_01": _parse_miniapp,
+    "com.tencent.tuwen.lua": _parse_view_based,
+    "com.tencent.music.lua": _parse_view_based,
+    "com.tencent.structmsg": _parse_view_based,
+    "com.tencent.channel.share": _parse_channel,
+}
+
+
 def parse_card_message(event: MessageEvent) -> tuple[str | None, str | None]:
     """从腾讯卡片消息提取链接和标题（统一解析入口）
 
@@ -47,17 +109,7 @@ def parse_card_message(event: MessageEvent) -> tuple[str | None, str | None]:
     Returns:
         (url, title) 元组，未找到返回 (None, None)
     """
-    # 从 MessageSegment 提取 JSON 卡片数据
-    card_data = None
-    for seg in event.message:
-        if seg.type == "json":
-            if data := seg.data.get("data"):
-                try:
-                    card_data = json.loads(data) if isinstance(data, str) else data
-                    break
-                except json.JSONDecodeError as e:
-                    logger.debug(f"JSON卡片解析失败: {e}")
-
+    card_data = _extract_card_data(event)
     if not card_data:
         return (None, None)
 
@@ -65,57 +117,20 @@ def parse_card_message(event: MessageEvent) -> tuple[str | None, str | None]:
     meta = card_data.get("meta", {})
     view = card_data.get("view", "")
 
-    url, title = None, None
+    if parser := _CARD_PARSERS.get(app):
+        if parser == _parse_view_based:
+            url, title = parser(meta, view, app)
+        else:
+            url, title = parser(meta, app)
+    else:
+        url, title = _parse_fallback(meta, app)
 
-    match app:
-        case "com.tencent.miniapp_01":
-            # 小程序卡片
-            detail = meta.get("detail_1", {})
-            url = detail.get("qqdocurl") or detail.get("url")
-            title = detail.get("desc") or detail.get("title")
-            if url:
-                logger.debug(f"腾讯卡片解析 - 小程序卡片，app={app}")
-
-        case "com.tencent.tuwen.lua" | "com.tencent.music.lua":
-            # 图文/音乐分享
-            view_data = meta.get(view, {}) if view else meta.get("news", {})
-            url = view_data.get("jumpUrl")
-            title = view_data.get("title")
-            if url:
-                logger.debug(f"腾讯卡片解析 - 图文/音乐分享，app={app}, view={view}")
-
-        case "com.tencent.structmsg":
-            # 结构化消息（旧版协议）
-            view_data = meta.get(view, {}) if view else meta.get("news", {})
-            url = view_data.get("jumpUrl")
-            title = view_data.get("title")
-            if url:
-                logger.debug(f"腾讯卡片解析 - 结构化消息，app={app}, view={view}")
-
-        case "com.tencent.channel.share":
-            # 频道分享
-            detail = meta.get("detail", {})
-            url = detail.get("link")
-            title = detail.get("title")
-            if url:
-                logger.debug(f"腾讯卡片解析 - 频道分享，app={app}")
-
-        case _:
-            # 通用回退：尝试 news 路径
-            if news := meta.get("news"):
-                url = news.get("jumpUrl")
-                title = news.get("title")
-                if url:
-                    logger.debug(f"腾讯卡片解析 - 通用回退(news)，app={app}")
-
-    # 处理反斜杠转义
     if url:
         url = url.replace("\\", "/")
+        return (url, title)
 
-    if not url:
-        logger.debug(f"腾讯卡片解析 - 未找到 URL，app={app}, meta keys={list(meta.keys())}")
-
-    return (url, title)
+    logger.debug(f"腾讯卡片解析 - 未找到 URL，app={app}, meta keys={list(meta.keys())}")
+    return (None, None)
 
 
 async def get_redirect_url(url: str, timeout: float = 10.0) -> str:
@@ -242,7 +257,11 @@ async def handle_bilibili_message(
             await bilibili_matcher.finish(video_data)
 
         # 2. 下载并发送视频
-        video_bytes = await download_media(video_data["url"], headers=video_data["headers"])
+        # 类型注解：经过 isinstance 检查后，video_data 必为 dict
+        video_data_dict: dict = video_data  # type: ignore[assignment]
+        video_bytes = await download_media(
+            video_data_dict["url"], headers=video_data_dict["headers"]
+        )
         await bilibili_matcher.send(MessageSegment.video(video_bytes))
 
     except MatcherException:
@@ -313,10 +332,14 @@ async def handle_douyin_message(
             await douyin_matcher.finish(video_info)
 
         # 2. 发送标题
-        await douyin_matcher.send(f"{video_info['title']}")
+        # 类型注解：经过 isinstance 检查后，video_info 必为 dict
+        video_info_dict: dict = video_info  # type: ignore[assignment]
+        await douyin_matcher.send(f"{video_info_dict['title']}")
 
         # 3. 下载视频
-        video_data = await download_media(video_info["url"], headers=video_info["headers"])
+        video_data = await download_media(
+            video_info_dict["url"], headers=video_info_dict["headers"]
+        )
 
         # 4. 发送视频（超时处理）
         try:
@@ -535,18 +558,20 @@ async def handle_xiaohongshu_message(
             # 向用户发送详细错误信息
             await xiaohongshu_matcher.finish(note_info)
 
-        info_text = f"{note_info['title']}\n作者: {note_info['author']}"
+        # 类型注解：经过 isinstance 检查后，note_info 必为 dict
+        note_info_dict: dict = note_info  # type: ignore[assignment]
+        info_text = f"{note_info_dict['title']}\n作者: {note_info_dict['author']}"
 
         # 2. 根据内容类型处理
         media_segments: list[MessageSegment] = []
-        if note_info["pic_urls"]:
+        if note_info_dict["pic_urls"]:
             # 处理图片内容 - 使用并发下载提升性能
-            pic_urls = note_info["pic_urls"][:9]  # 最多处理9张图片
+            pic_urls = note_info_dict["pic_urls"][:9]  # 最多处理9张图片
             logger.info(f"图片数量{len(pic_urls)}张，使用并发下载（max_concurrent=5）")
             media_segments = await download_images_concurrent(pic_urls, max_concurrent=5)
-        elif note_info["video_url"]:
+        elif note_info_dict["video_url"]:
             # 处理视频内容
-            video_data = await download_media(note_info["video_url"])
+            video_data = await download_media(note_info_dict["video_url"])
             media_segments = [MessageSegment.video(video_data)]
 
         # 统一发送转发消息

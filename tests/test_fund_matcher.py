@@ -1,10 +1,11 @@
 """测试 fund 插件的 matcher 行为"""
 
-import pytest
 from datetime import datetime
-from nonebug import App
-from nonebot.adapters.onebot.v11 import Bot, Message, GroupMessageEvent
 from unittest.mock import patch
+
+import pytest
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message
+from nonebug import App
 
 
 def create_fake_group_message_event(
@@ -32,15 +33,16 @@ def create_fake_group_message_event(
             "nickname": "测试用户",
             "card": "",
             "role": "member",
-        },
+        },  # type: ignore[arg-type]
     )
 
 
 @pytest.mark.asyncio
 async def test_fund_query_matcher_regex_match(app: App):
     """测试 fund_query matcher 的正则匹配"""
-    from src.plugins.fund import fund_query
     from nonebot.adapters.onebot.v11 import Bot as OneBotV11Bot
+
+    from src.plugins.fund import fund_query
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=OneBotV11Bot, self_id="987654321")
@@ -79,8 +81,9 @@ async def test_fund_query_matcher_etf_code(app: App):
 @pytest.mark.asyncio
 async def test_fund_query_matcher_stock_code_with_suffix(app: App):
     """测试带交易所后缀的股票代码匹配"""
-    from src.plugins.fund import fund_query
     from nonebot.adapters.onebot.v11 import Bot as OneBotV11Bot
+
+    from src.plugins.fund import fund_query
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=OneBotV11Bot, self_id="987654321")
@@ -158,7 +161,7 @@ async def test_fund_query_handler_with_mocked_data(app: App):
 @pytest.mark.asyncio
 async def test_fund_query_handler_with_unknown_code(app: App):
     """测试未知代码类型的处理（静默失败）"""
-    from src.plugins.fund import fund_query, identify_code_type, CodeType
+    from src.plugins.fund import CodeType, fund_query
 
     async with app.test_matcher(fund_query) as ctx:
         bot = ctx.create_bot(base=Bot, self_id="987654321")
@@ -179,8 +182,9 @@ async def test_fund_query_handler_with_unknown_code(app: App):
 @pytest.mark.asyncio
 async def test_fund_query_handler_with_private_message(app: App):
     """测试私聊消息的处理"""
-    from src.plugins.fund import fund_query
     from nonebot.adapters.onebot.v11 import PrivateMessageEvent
+
+    from src.plugins.fund import fund_query
 
     expected_info_text = "测试基金信息"
 
@@ -208,7 +212,7 @@ async def test_fund_query_handler_with_private_message(app: App):
                     "nickname": "测试用户",
                     "sex": "unknown",
                     "age": 0,
-                },
+                },  # type: ignore[arg-type]
             )
 
             ctx.receive_event(bot, event)

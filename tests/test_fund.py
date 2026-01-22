@@ -7,7 +7,7 @@ async def test_fund_query_002170_output_consistency(fund_plugin):
     assert fund_plugin is not None, "fund 插件应该正确加载"
     assert fund_plugin.name == "fund", "插件名称应该是 fund"
 
-    from src.plugins.fund import fund_query, identify_code_type, CodeType
+    from src.plugins.fund import CodeType, fund_query, identify_code_type
 
     assert fund_query is not None, "fund_query 匹配器应该存在"
     assert callable(identify_code_type), "identify_code_type 应该是可调用的函数"
@@ -26,7 +26,7 @@ async def test_fund_query_002170_output_consistency(fund_plugin):
     test_codes = ["002170", "510300", "000001.SH"]
     expected_types = [CodeType.OFF_MARKET_FUND, CodeType.ETF, CodeType.INDEX]
 
-    for code, expected_type in zip(test_codes, expected_types):
+    for code, expected_type in zip(test_codes, expected_types, strict=False):
         actual_type = identify_code_type(code)
         assert actual_type == expected_type, (
             f"代码 {code} 应该被识别为 {expected_type.value}，实际识别为: {actual_type.value}"
@@ -36,7 +36,7 @@ async def test_fund_query_002170_output_consistency(fund_plugin):
 @pytest.mark.asyncio
 async def test_fund_query_002170_with_mocked_data():
     """测试代码 002170 的格式化输出一致性"""
-    from src.plugins.fund import identify_code_type, CodeType, format_fund_info
+    from src.plugins.fund import CodeType, format_fund_info, identify_code_type
 
     code_type = identify_code_type("002170")
     assert code_type == CodeType.OFF_MARKET_FUND, (
@@ -69,7 +69,7 @@ async def test_fund_query_002170_with_mocked_data():
         "success": True,
     }
 
-    formatted_output = await format_fund_info("002170", mock_fund_data)
+    formatted_output = format_fund_info("002170", mock_fund_data)
 
     expected_baseline_output = """东吴移动互联混合C
 代码: 002170
@@ -102,7 +102,7 @@ async def test_fund_query_002170_with_mocked_data():
 @pytest.mark.asyncio
 async def test_fund_code_identification_consistency():
     """基金代码类型识别测试"""
-    from src.plugins.fund import identify_code_type, CodeType
+    from src.plugins.fund import CodeType, identify_code_type
 
     test_cases = [
         ("002170", CodeType.OFF_MARKET_FUND),  # 东吴移动互联混合C
@@ -125,8 +125,9 @@ async def test_fund_code_identification_consistency():
 
 @pytest.mark.asyncio
 async def test_fund_format_structure_consistency():
-    from src.plugins.fund import format_fund_info
     import pandas as pd
+
+    from src.plugins.fund import format_fund_info
 
     basic_info_df = pd.DataFrame(
         {"item": ["基金名称", "基金代码"], "value": ["测试基金", "TEST001"]}
@@ -143,7 +144,7 @@ async def test_fund_format_structure_consistency():
         "success": True,
     }
 
-    formatted_output = await format_fund_info("TEST001", mock_fund_data)
+    formatted_output = format_fund_info("TEST001", mock_fund_data)
 
     lines = formatted_output.split("\n")
 
@@ -151,8 +152,8 @@ async def test_fund_format_structure_consistency():
     assert len(lines) >= 8, "输出应该至少有8行"
     assert lines[0] == "测试基金", "第一行应该是基金名称"
     assert lines[1] == "代码: TEST001", "第二行应该是基金代码"
-    assert "" == lines[2], "第三行应该是空行"
-    assert "最近交易日收益:" == lines[3], "第四行应该是收益标题"
+    assert lines[2] == "", "第三行应该是空行"
+    assert lines[3] == "最近交易日收益:", "第四行应该是收益标题"
 
     assert "最近交易日收益:" in formatted_output, "应该包含最近交易日收益部分"
     assert "阶段收益:" in formatted_output, "应该包含阶段收益部分"
@@ -165,7 +166,7 @@ async def test_fund_format_structure_consistency():
 @pytest.mark.asyncio
 async def test_fund_code_type_edge_cases():
     """基金代码边界情况测试"""
-    from src.plugins.fund import identify_code_type, CodeType
+    from src.plugins.fund import CodeType, identify_code_type
 
     edge_cases = [
         ("", CodeType.UNKNOWN),
