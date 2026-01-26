@@ -618,8 +618,18 @@ async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
             group_id, nickname, at_qq, occupied_user_id
         )
         if success:
-            members = await fetch_collection_members(group_id, nickname)
-            await add_nickname_matcher.finish(f"已升级为集合，共{len(members)}人")
+            msg = "已升级为集合"
+            try:
+                member_info = await bot.get_group_member_info(
+                    group_id=int(group_id), user_id=int(occupied_user_id)
+                )
+                occupied_user_name = (
+                    member_info.get("card") or member_info.get("nickname") or occupied_user_id
+                )
+                msg = f"已升级为集合，还有一个是{occupied_user_name}"
+            except Exception as e:
+                logger.warning(f"获取用户 {occupied_user_id} 信息失败: {e}")
+            await add_nickname_matcher.finish(msg)
         else:
             await add_nickname_matcher.finish(error_msg)
         return
