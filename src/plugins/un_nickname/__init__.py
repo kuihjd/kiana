@@ -310,6 +310,31 @@ async def delete_single_nickname(group_id: str, user_id: str, nickname: str) -> 
     return True
 
 
+async def _add_to_existing_collection(
+    group_id: str, collection_name: str, user_id: str
+) -> tuple[bool, str]:
+    """将用户添加到已存在的集合
+
+    Returns:
+        (success, message): 成功返回 (True, "已加入集合，共N人")，失败返回 (False, "错误消息")
+    """
+    existing_members = await fetch_collection_members(group_id, collection_name)
+    member_count = len(existing_members)
+
+    if user_id in existing_members:
+        return False, "你已在集合中!"
+
+    if member_count >= config.max_collection_members:
+        return (
+            False,
+            f"集合成员数超过上限（最多{config.max_collection_members}人）",
+        )
+
+    await add_collection_members(group_id, collection_name, [user_id])
+    members = await fetch_collection_members(group_id, collection_name)
+    return True, f"已加入集合，共{len(members)}人"
+
+
 async def upgrade_nickname_to_collection(
     group_id: str, nickname: str, new_user_id: str, occupied_user_id: str
 ) -> tuple[bool, str | None]:
@@ -583,7 +608,8 @@ async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
     group_id = str(event.group_id)
 
     if await name_exists_as_collection(group_id, nickname):
-        await add_nickname_matcher.finish(f"名称「{nickname}」已被集合占用!")
+        success, message = await _add_to_existing_collection(group_id, nickname, at_qq)
+        await add_nickname_matcher.finish(message)
         return
 
     occupied_user_id = await nickname_occupied(group_id, nickname, at_qq)
