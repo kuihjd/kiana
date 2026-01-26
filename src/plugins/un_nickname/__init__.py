@@ -310,6 +310,45 @@ async def delete_single_nickname(group_id: str, user_id: str, nickname: str) -> 
     return True
 
 
+async def upgrade_nickname_to_collection(
+    group_id: str, nickname: str, new_user_id: str, occupied_user_id: str
+) -> tuple[bool, str | None]:
+    """将重复昵称升级为集合，添加两个用户并删除昵称记录
+
+    Args:
+        group_id: 群组ID
+        nickname: 昵称名称（将作为集合名）
+        new_user_id: 新添加昵称的用户ID
+        occupied_user_id: 已占用昵称的用户ID
+
+    Returns:
+        (success, error_message): 成功时返回 (True, None)，失败时返回 (False, "错误消息")
+    """
+    existing_members = await fetch_collection_members(group_id, nickname)
+    existing_set = set(existing_members)
+
+    users_to_add = []
+    if occupied_user_id not in existing_set:
+        users_to_add.append(occupied_user_id)
+    if new_user_id not in existing_set:
+        users_to_add.append(new_user_id)
+
+    total_members = len(existing_members) + len(users_to_add)
+    if total_members > config.max_collection_members:
+        return (
+            False,
+            f"集合成员数超过上限（最多{config.max_collection_members}人）",
+        )
+
+    if users_to_add:
+        await add_collection_members(group_id, nickname, users_to_add)
+
+    await delete_single_nickname(group_id, occupied_user_id, nickname)
+    await delete_single_nickname(group_id, new_user_id, nickname)
+
+    return True, None
+
+
 async def clear_user_nicknames(group_id: str, user_id: str) -> list[str]:
     """清空用户的所有昵称，返回被清空的昵称列表"""
     nicknames = await fetch_user_nicknames(group_id, user_id)
@@ -549,18 +588,14 @@ async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
 
     occupied_user_id = await nickname_occupied(group_id, nickname, at_qq)
     if occupied_user_id:
-        try:
-            member_info = await bot.get_group_member_info(
-                group_id=int(group_id), user_id=int(occupied_user_id)
-            )
-            occupied_user_name = (
-                member_info.get("card") or member_info.get("nickname") or occupied_user_id
-            )
-        except Exception as e:
-            logger.warning(f"获取用户 {occupied_user_id} 信息失败: {e}")
-            occupied_user_name = occupied_user_id
-
-        await add_nickname_matcher.finish(f"昵称'{nickname}'已被 {occupied_user_name} 占用!")
+        success, error_msg = await upgrade_nickname_to_collection(
+            group_id, nickname, at_qq, occupied_user_id
+        )
+        if success:
+            members = await fetch_collection_members(group_id, nickname)
+            await add_nickname_matcher.finish(f"已升级为集合，共{len(members)}人")
+        else:
+            await add_nickname_matcher.finish(error_msg)
         return
 
     if await add_nickname_record(group_id, at_qq, nickname):
