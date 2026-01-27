@@ -15,6 +15,7 @@ from nonebot.plugin import PluginMetadata
 from nonebot.rule import Rule
 from nonebot.typing import T_State
 
+from ..forward_utils import create_forward_nodes, send_forward_message
 from ..group_permission import create_platform_rule
 from . import bilibili, douyin, xiaohongshu
 from .config import Config
@@ -486,41 +487,6 @@ async def download_images_concurrent(
     return image_segments
 
 
-async def send_forward_message(bot: Bot, event: MessageEvent, forward_nodes: list):
-    """发送合并转发消息"""
-    if isinstance(event, GroupMessageEvent):
-        await bot.call_api(
-            "send_group_forward_msg",
-            group_id=event.group_id,
-            messages=forward_nodes,
-        )
-    else:
-        await bot.call_api(
-            "send_private_forward_msg",
-            user_id=event.user_id,
-            messages=forward_nodes,
-        )
-
-
-def create_forward_nodes(
-    bot: Bot, info_text: str, media_segments: list[MessageSegment] | None = None
-) -> list[dict[str, Any]]:
-    """创建合并转发消息节点"""
-    # 添加文字内容节点
-    forward_nodes: list[dict[str, Any]] = [
-        {"type": "node", "data": {"name": "", "uin": bot.self_id, "content": info_text}}
-    ]
-
-    # 添加媒体内容节点
-    if media_segments:
-        forward_nodes.extend(
-            {"type": "node", "data": {"name": "", "uin": bot.self_id, "content": seg}}
-            for seg in media_segments
-        )
-
-    return forward_nodes
-
-
 @xiaohongshu_matcher.handle()
 async def handle_xiaohongshu_message(
     bot: Bot,
@@ -575,7 +541,10 @@ async def handle_xiaohongshu_message(
             media_segments = [MessageSegment.video(video_data)]
 
         # 统一发送转发消息
-        forward_nodes = create_forward_nodes(bot, info_text, media_segments or None)
+        contents: list[str | MessageSegment] = [info_text]
+        if media_segments:
+            contents.extend(media_segments)
+        forward_nodes = create_forward_nodes(bot, contents)
         await send_forward_message(bot, event, forward_nodes)
 
     except MatcherException:

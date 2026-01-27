@@ -335,7 +335,7 @@ async def _(bot: Bot, event: Event, matches: tuple[str, str] = RegexGroup()):
         custom_window = parsed_window
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         image_data = await loop.run_in_executor(_chart_executor, generate_chart, custom_window)
         await gold_chart.send(MessageSegment.image(image_data))
     except Exception as e:

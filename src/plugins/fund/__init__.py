@@ -2,7 +2,6 @@ import asyncio
 import re
 from datetime import datetime, timedelta
 from enum import Enum
-from functools import partial
 from typing import Any, Literal
 
 import akshare as ak
@@ -12,6 +11,7 @@ from nonebot.adapters.onebot.v11 import Bot, Event, GroupMessageEvent, MessageEv
 from nonebot.exception import MatcherException
 from nonebot.plugin import PluginMetadata
 
+from ..forward_utils import create_forward_nodes, send_forward_message
 from ..group_permission import create_group_rule
 from .cache import FundDataCacheManager
 from .config import Config
@@ -243,13 +243,11 @@ async def get_etf_spot_data_cached() -> pd.DataFrame | None:
 
     async def fetch_etf_data_em() -> pd.DataFrame:
         """获取东方财富ETF数据"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, ak.fund_etf_spot_em)
+        return await asyncio.to_thread(ak.fund_etf_spot_em)
 
     async def fetch_etf_data_ths() -> pd.DataFrame:
         """获取同花顺ETF数据并规范化格式"""
-        loop = asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, ak.fund_etf_spot_ths)
+        data = await asyncio.to_thread(ak.fund_etf_spot_ths)
         return _normalize_etf_data_from_ths(data)
 
     async def primary_fetch() -> pd.DataFrame:
@@ -302,8 +300,7 @@ async def get_lof_spot_data_cached() -> pd.DataFrame:
 
     async def fetch_lof_data() -> pd.DataFrame:
         """获取LOF数据"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, ak.fund_lof_spot_em)
+        return await asyncio.to_thread(ak.fund_lof_spot_em)
 
     cache_manager = _get_cache_manager()
     ttl_minutes = _get_config_value("fund_cache_ttl_minutes", DEFAULT_CACHE_TTL_MINUTES)
@@ -316,11 +313,9 @@ async def get_lof_spot_data_cached() -> pd.DataFrame:
 async def get_fund_data(fund_code: str) -> dict:
     """获取基金数据,包括基本信息、业绩和净值信息"""
     try:
-        loop = asyncio.get_event_loop()
-
         # 获取基金基本信息
-        basic_info_df = await loop.run_in_executor(
-            None, partial(ak.fund_individual_basic_info_xq, symbol=fund_code)
+        basic_info_df = await asyncio.to_thread(
+            ak.fund_individual_basic_info_xq, symbol=fund_code
         )
 
         if basic_info_df.empty or len(basic_info_df) == 0:
@@ -328,13 +323,13 @@ async def get_fund_data(fund_code: str) -> dict:
             return {"success": False, "error": "未找到基金信息"}
 
         # 获取基金业绩数据
-        achievement_df = await loop.run_in_executor(
-            None, partial(ak.fund_individual_achievement_xq, symbol=fund_code)
+        achievement_df = await asyncio.to_thread(
+            ak.fund_individual_achievement_xq, symbol=fund_code
         )
 
         # 获取基金净值数据
-        nav_df = await loop.run_in_executor(
-            None, partial(ak.fund_open_fund_info_em, symbol=fund_code, indicator="单位净值走势")
+        nav_df = await asyncio.to_thread(
+            ak.fund_open_fund_info_em, symbol=fund_code, indicator="单位净值走势"
         )
 
         # 检查净值数据是否有效
@@ -386,17 +381,13 @@ async def get_market_fund_data(fund_code: str, fund_type: Literal["etf", "lof"])
         end_date = datetime.now().strftime("%Y%m%d")
         start_date = (datetime.now() - timedelta(days=history_days)).strftime("%Y%m%d")
 
-        loop = asyncio.get_event_loop()
-        hist_df = await loop.run_in_executor(
-            None,
-            partial(
-                hist_func,
-                symbol=fund_code,
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="",
-            ),
+        hist_df = await asyncio.to_thread(
+            hist_func,
+            symbol=fund_code,
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
         )
 
         if hist_df.empty or len(hist_df) < 2:
@@ -415,9 +406,8 @@ async def get_fund_holdings(fund_code: str) -> dict:
         current_year = datetime.now().year
 
         # 获取基金持仓数据
-        loop = asyncio.get_event_loop()
-        holdings_df = await loop.run_in_executor(
-            None, partial(ak.fund_portfolio_hold_em, symbol=fund_code, date=str(current_year))
+        holdings_df = await asyncio.to_thread(
+            ak.fund_portfolio_hold_em, symbol=fund_code, date=str(current_year)
         )
 
         return {
@@ -460,17 +450,13 @@ async def get_stock_data(stock_code: str) -> dict:
         end_date = datetime.now().strftime("%Y%m%d")
         start_date = (datetime.now() - timedelta(days=history_days)).strftime("%Y%m%d")
 
-        loop = asyncio.get_event_loop()
-        hist_df = await loop.run_in_executor(
-            None,
-            partial(
-                ak.stock_zh_a_hist,
-                symbol=code,
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="qfq",
-            ),
+        hist_df = await asyncio.to_thread(
+            ak.stock_zh_a_hist,
+            symbol=code,
+            period="daily",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="qfq",
         )
 
         if hist_df.empty or len(hist_df) < 2:
@@ -550,13 +536,9 @@ async def get_index_data(index_code: str) -> dict:
             return {"success": False, "error": "无法识别的指数代码"}
 
         # 获取历史数据（使用 stock_zh_index_daily_em API）
-        loop = asyncio.get_event_loop()
-        hist_df = await loop.run_in_executor(
-            None,
-            partial(
-                ak.stock_zh_index_daily_em,
-                symbol=symbol,
-            ),
+        hist_df = await asyncio.to_thread(
+            ak.stock_zh_index_daily_em,
+            symbol=symbol,
         )
 
         if hist_df.empty or len(hist_df) < 2:
@@ -985,48 +967,6 @@ def format_fund_holdings(fund_code: str, holdings_data: dict) -> str:
         return f"基金 {fund_code}\n持仓数据格式化失败: {e!s}"
 
 
-def create_forward_nodes(
-    bot: Bot,
-    info_text: str,
-    holdings_text: str | None = None,
-) -> list[dict]:
-    """创建合并转发消息节点"""
-    forward_nodes = []
-
-    # 基金基本信息节点
-    text_node = {
-        "type": "node",
-        "data": {"name": "", "uin": bot.self_id, "content": info_text},
-    }
-    forward_nodes.append(text_node)
-
-    # 十大重仓股信息节点
-    if holdings_text:
-        holdings_node = {
-            "type": "node",
-            "data": {"name": "", "uin": bot.self_id, "content": holdings_text},
-        }
-        forward_nodes.append(holdings_node)
-
-    return forward_nodes
-
-
-async def send_forward_message(bot: Bot, event: MessageEvent, forward_nodes: list):
-    """发送合并转发消息"""
-    if isinstance(event, GroupMessageEvent):
-        await bot.call_api(
-            "send_group_forward_msg",
-            group_id=event.group_id,
-            messages=forward_nodes,
-        )
-    else:
-        await bot.call_api(
-            "send_private_forward_msg",
-            user_id=event.user_id,
-            messages=forward_nodes,
-        )
-
-
 async def _query_off_market_fund(code: str) -> tuple[str | None, str | None]:
     """查询场外基金数据
 
@@ -1183,7 +1123,10 @@ async def handle_fund_query(bot: Bot, event: MessageEvent) -> None:
 
         # 创建并发送合并转发消息
         if info_text:
-            forward_nodes = create_forward_nodes(bot, info_text, holdings_text)
+            contents: list[str | MessageSegment] = [info_text]
+            if holdings_text:
+                contents.append(holdings_text)
+            forward_nodes = create_forward_nodes(bot, contents)
             await send_forward_message(bot, event, forward_nodes)
         else:
             logger.warning(f"未能获取到数据: {code}")
