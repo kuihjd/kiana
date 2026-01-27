@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from nonebot import get_plugin_config, logger
 
 from .config import Config
+from .exceptions import ParseError, VideoFetchError
 
 config = get_plugin_config(Config)
 
@@ -61,7 +62,7 @@ class XiaoHongShuParser:
 
     async def _get_redirect_url(self, url: str) -> str:
         """获取重定向后的URL"""
-        async with AsyncClient() as client:
+        async with AsyncClient(timeout=config.HTTP_TIMEOUT) as client:
             response = await client.get(url, headers=self.headers, follow_redirects=True)
             return str(response.url)
 
@@ -71,7 +72,7 @@ class XiaoHongShuParser:
         pattern = r"(?:/explore/|/discovery/item/|source=note&noteId=)(\w+)"
         if matched := re.search(pattern, url):
             return matched[1]
-        raise ValueError("无法从URL中提取笔记ID")
+        raise ParseError("无法从URL中提取笔记ID")
 
     def _build_api_url(
         self, note_id: str, xsec_source: str = "pc_feed", xsec_token: str = ""
@@ -89,16 +90,16 @@ class XiaoHongShuParser:
         """解析页面中的初始状态数据"""
         pattern = r"window\.__INITIAL_STATE__=(.*?)</script>"
         if not (matched := re.search(pattern, html)):
-            raise ValueError("页面中未找到初始状态数据")
+            raise ParseError("页面中未找到初始状态数据")
 
         json_str = matched[1]
-        # 处理JavaScript中的undefined值
-        json_str = json_str.replace("undefined", "null")
+        # 只替换 JSON 值位置的 undefined（避免误替换字符串内容）
+        json_str = re.sub(r"(?<=[:,\[])undefined(?=[,\}\]])", "null", json_str)
 
         try:
             return json.loads(json_str)
         except json.JSONDecodeError as e:
-            raise ValueError(f"解析JSON数据失败: {e}") from e
+            raise ParseError(f"解析JSON数据失败: {e}") from e
 
     def _extract_note_data(self, json_obj: dict[str, Any], note_id: str) -> dict[str, Any]:
         """从JSON对象中提取笔记数据"""
@@ -106,7 +107,7 @@ class XiaoHongShuParser:
             return json_obj["note"]["noteDetailMap"][note_id]["note"]
         except KeyError as e:
             logger.error(f"小红书数据结构解析失败: {e}", exc_info=True)
-            raise ValueError("笔记数据不存在或结构异常") from e
+            raise ParseError("笔记数据不存在或结构异常") from e
 
     def _parse_media_content(self, note_data: dict[str, Any]) -> tuple[list[str], str]:
         """解析媒体内容（图片或视频）"""
@@ -131,9 +132,9 @@ class XiaoHongShuParser:
                         break
 
             if not video_url:
-                raise ValueError("无法获取视频播放地址")
+                raise VideoFetchError("无法获取视频播放地址")
         else:
-            raise ValueError(f"不支持的内容类型: {resource_type}")
+            raise ParseError(f"不支持的内容类型: {resource_type}")
 
         return img_urls, video_url
 
@@ -147,7 +148,8 @@ class XiaoHongShuParser:
             ParseResult: 解析结果
 
         Raises:
-            ValueError: URL格式错误或解析失败
+            ParseError: URL格式错误或解析失败
+            VideoFetchError: 视频获取失败
         """
         try:
             # 处理短链接重定向
@@ -167,8 +169,8 @@ class XiaoHongShuParser:
             api_url = self._build_api_url(note_id, xsec_source, xsec_token)
 
             # 发送请求获取页面内容
-            async with AsyncClient() as client:
-                response = await client.get(api_url, headers=self.headers, timeout=30.0)
+            async with AsyncClient(timeout=config.HTTP_TIMEOUT) as client:
+                response = await client.get(api_url, headers=self.headers)
                 response.raise_for_status()
                 html = response.text
 
@@ -194,9 +196,11 @@ class XiaoHongShuParser:
                 author=author,
             )
 
+        except (ParseError, VideoFetchError):
+            raise
         except Exception as e:
             logger.error(f"小红书解析失败: {e}", exc_info=True)
-            raise ValueError(f"解析失败: {e}") from e
+            raise ParseError(f"解析失败: {e}") from e
 
 
 async def extract_url(text: str) -> str:
@@ -211,14 +215,18 @@ async def extract_url(text: str) -> str:
 xiaohongshu_parser = XiaoHongShuParser()
 
 
-async def get_note_info(url: str) -> dict | str:
+async def get_note_info(url: str) -> dict:
     """获取小红书笔记信息
 
     Args:
         url: 小红书链接
 
     Returns:
-        解析结果字典或错误信息
+        解析结果字典
+
+    Raises:
+        ParseError: 解析失败
+        VideoFetchError: 视频获取失败
     """
     try:
         result = await xiaohongshu_parser.parse_url(url)
@@ -229,6 +237,8 @@ async def get_note_info(url: str) -> dict | str:
             "pic_urls": result.pic_urls or [],
             "cover_url": result.cover_url,
         }
+    except (ParseError, VideoFetchError):
+        raise
     except Exception as e:
         logger.error(f"获取小红书笔记信息失败: {e}", exc_info=True)
-        return f"获取笔记信息失败: {e}"
+        raise ParseError(f"获取笔记信息失败: {e}") from e

@@ -19,6 +19,7 @@ from ..forward_utils import create_forward_nodes, send_forward_message
 from ..group_permission import create_platform_rule
 from . import bilibili, douyin, xiaohongshu
 from .config import Config
+from .exceptions import DoubiliError
 
 __plugin_meta__ = PluginMetadata(
     name="doubili",
@@ -159,7 +160,7 @@ async def download_media(url: str, headers: dict | None = None) -> BytesIO:
     Returns:
         包含媒体数据的 BytesIO 对象
     """
-    async with AsyncClient(follow_redirects=True) as client:
+    async with AsyncClient(follow_redirects=True, timeout=config.DOWNLOAD_TIMEOUT) as client:
         response = await client.get(url, headers=headers)
         response.raise_for_status()
         return BytesIO(response.content)
@@ -251,20 +252,17 @@ async def handle_bilibili_message(
         else:  # avid
             video_data = await bilibili.get_video_stream(avid=int(video_id))
 
-        if isinstance(video_data, str):
-            # 记录详细错误到日志
-            logger.warning(f"Bilibili视频获取失败: {video_data}")
-            # 向用户发送详细错误信息
-            await bilibili_matcher.finish(video_data)
-
         # 2. 下载并发送视频
-        # 类型注解：经过 isinstance 检查后，video_data 必为 dict
-        video_data_dict: dict = video_data  # type: ignore[assignment]
         video_bytes = await download_media(
-            video_data_dict["url"], headers=video_data_dict["headers"]
+            video_data["url"], headers=video_data["headers"]
         )
         await bilibili_matcher.send(MessageSegment.video(video_bytes))
 
+    except DoubiliError as e:
+        # 记录详细错误到日志
+        logger.warning(f"Bilibili视频获取失败: {e}")
+        # 向用户发送详细错误信息
+        await bilibili_matcher.finish(str(e))
     except MatcherException:
         raise
     except Exception as e:
@@ -326,20 +324,13 @@ async def handle_douyin_message(
     try:
         # 1. 获取视频信息
         video_info = await douyin.get_video_info(video_id)
-        if isinstance(video_info, str):
-            # 记录详细错误到日志
-            logger.warning(f"抖音视频获取失败: {video_info}")
-            # 向用户发送详细错误信息
-            await douyin_matcher.finish(video_info)
 
         # 2. 发送标题
-        # 类型注解：经过 isinstance 检查后，video_info 必为 dict
-        video_info_dict: dict = video_info  # type: ignore[assignment]
-        await douyin_matcher.send(f"{video_info_dict['title']}")
+        await douyin_matcher.send(f"{video_info['title']}")
 
         # 3. 下载视频
         video_data = await download_media(
-            video_info_dict["url"], headers=video_info_dict["headers"]
+            video_info["url"], headers=video_info["headers"]
         )
 
         # 4. 发送视频（超时处理）
@@ -359,6 +350,11 @@ async def handle_douyin_message(
                 await douyin_matcher.finish("视频发送失败")
             return
 
+    except DoubiliError as e:
+        # 记录详细错误到日志
+        logger.warning(f"抖音视频获取失败: {e}")
+        # 向用户发送详细错误信息
+        await douyin_matcher.finish(str(e))
     except MatcherException:
         raise
     except Exception as e:
@@ -434,7 +430,7 @@ async def _download_single_image(pic_url: str) -> MessageSegment | None:
         None: 下载失败返回None
     """
     try:
-        async with AsyncClient(follow_redirects=True) as client:
+        async with AsyncClient(follow_redirects=True, timeout=config.DOWNLOAD_TIMEOUT) as client:
             response = await client.get(pic_url)
             response.raise_for_status()
 
@@ -518,26 +514,19 @@ async def handle_xiaohongshu_message(
     try:
         # 1. 获取笔记信息
         note_info = await xiaohongshu.get_note_info(url)
-        if isinstance(note_info, str):
-            # 记录详细错误到日志
-            logger.warning(f"小红书笔记获取失败: {note_info}")
-            # 向用户发送详细错误信息
-            await xiaohongshu_matcher.finish(note_info)
 
-        # 类型注解：经过 isinstance 检查后，note_info 必为 dict
-        note_info_dict: dict = note_info  # type: ignore[assignment]
-        info_text = f"{note_info_dict['title']}\n作者: {note_info_dict['author']}"
+        info_text = f"{note_info['title']}\n作者: {note_info['author']}"
 
         # 2. 根据内容类型处理
         media_segments: list[MessageSegment] = []
-        if note_info_dict["pic_urls"]:
+        if note_info["pic_urls"]:
             # 处理图片内容 - 使用并发下载提升性能
-            pic_urls = note_info_dict["pic_urls"][:9]  # 最多处理9张图片
+            pic_urls = note_info["pic_urls"][:9]  # 最多处理9张图片
             logger.info(f"图片数量{len(pic_urls)}张，使用并发下载（max_concurrent=5）")
             media_segments = await download_images_concurrent(pic_urls, max_concurrent=5)
-        elif note_info_dict["video_url"]:
+        elif note_info["video_url"]:
             # 处理视频内容
-            video_data = await download_media(note_info_dict["video_url"])
+            video_data = await download_media(note_info["video_url"])
             media_segments = [MessageSegment.video(video_data)]
 
         # 统一发送转发消息
@@ -547,6 +536,11 @@ async def handle_xiaohongshu_message(
         forward_nodes = create_forward_nodes(bot, contents)
         await send_forward_message(bot, event, forward_nodes)
 
+    except DoubiliError as e:
+        # 记录详细错误到日志
+        logger.warning(f"小红书笔记获取失败: {e}")
+        # 向用户发送详细错误信息
+        await xiaohongshu_matcher.finish(str(e))
     except MatcherException:
         raise
     except Exception as e:

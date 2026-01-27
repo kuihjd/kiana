@@ -2,11 +2,25 @@ import asyncio
 from collections import defaultdict
 from time import time
 
-from nonebot import logger
+from nonebot import get_plugin_config, logger
 
 from src.storage import get_db
 
+from .config import Config
+
 db = get_db()
+
+# 延迟加载插件配置
+_cached_config: Config | None = None
+
+
+def _get_config() -> Config:
+    """获取插件配置，使用缓存避免重复获取"""
+    global _cached_config  # noqa: PLW0603
+    if _cached_config is None:
+        _cached_config = get_plugin_config(Config)
+    return _cached_config
+
 
 # 昵称映射缓存: {group_id: (expires_at, {nickname: user_id})}
 _nickname_cache: dict[str, tuple[float, dict[str, str]]] = {}
@@ -18,8 +32,6 @@ _collection_cache: dict[str, tuple[float, dict[str, list[str]]]] = {}
 _cache_locks: dict[str, asyncio.Lock] = {}
 # 全局锁，用于保护 _cache_locks 字典的创建操作，避免竞态条件
 _global_lock = asyncio.Lock()
-CACHE_TTL = 300
-EMPTY_CACHE_TTL = 30
 
 
 async def _get_group_lock(group_id: str) -> asyncio.Lock:
@@ -115,7 +127,7 @@ async def get_cached_nickname_map(group_id: str) -> dict[str, str]:
             for nickname in nicknames:
                 nickname_to_qq[nickname] = user_id
 
-        ttl = CACHE_TTL if nickname_to_qq else EMPTY_CACHE_TTL
+        ttl = _get_config().cache_ttl if nickname_to_qq else _get_config().empty_cache_ttl
         # DB 查询后使用新的时间戳计算过期时间，确保 TTL 准确
         _nickname_cache[group_id] = (time() + ttl, nickname_to_qq)
         logger.debug(f"已缓存群组 {group_id} 的 {len(nickname_to_qq)} 个昵称映射，TTL={ttl}s")
@@ -140,7 +152,7 @@ async def get_cached_collection_map(group_id: str) -> dict[str, list[str]]:
         logger.debug(f"从数据库查询群组 {group_id} 的集合映射")
         collection_map = await _fetch_all_collections_map(group_id)
 
-        ttl = CACHE_TTL if collection_map else EMPTY_CACHE_TTL
+        ttl = _get_config().cache_ttl if collection_map else _get_config().empty_cache_ttl
         _collection_cache[group_id] = (time() + ttl, collection_map)
         logger.debug(f"已缓存群组 {group_id} 的 {len(collection_map)} 个集合映射，TTL={ttl}s")
 

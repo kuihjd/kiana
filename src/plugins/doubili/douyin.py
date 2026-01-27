@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from httpx import AsyncClient
-from nonebot import logger
+from nonebot import get_plugin_config, logger
+
+from .config import Config
+from .exceptions import ParseError, VideoFetchError
+
+config = get_plugin_config(Config)
 
 
 @dataclass
@@ -47,8 +52,18 @@ class DouyinParser:
     def _build_m_douyin_url(self, _type: str, video_id: str) -> str:
         return f"https://m.douyin.com/share/{_type}/{video_id}"
 
-    async def get_video_info(self, video_id: str) -> dict | str:
-        """获取抖音视频信息"""
+    async def get_video_info(self, video_id: str) -> dict:
+        """获取抖音视频信息
+
+        Args:
+            video_id: 视频 ID
+
+        Returns:
+            包含 url, headers, title 的字典
+
+        Raises:
+            VideoFetchError: 获取视频信息失败
+        """
         try:
             share_url = f"https://www.douyin.com/video/{video_id}"
             video_info = await self.parse_share_url(share_url)
@@ -58,12 +73,14 @@ class DouyinParser:
                 "headers": self.ios_headers,
                 "title": video_info.title,
             }
+        except VideoFetchError:
+            raise
         except Exception as e:
             logger.error(f"解析抖音视频失败: {e}", exc_info=True)
-            return f"获取视频信息失败: {e!s}"
+            raise VideoFetchError(f"获取视频信息失败: {e!s}") from e
 
     async def parse_video(self, url: str) -> ParseResult:
-        async with AsyncClient() as client:
+        async with AsyncClient(timeout=config.HTTP_TIMEOUT) as client:
             response = await client.get(url, headers=self.ios_headers)
             response.raise_for_status()
             text = response.text
@@ -117,7 +134,7 @@ class DouyinParser:
         else:
             iesdouyin_url = await get_redirect_url(share_url)
             if not (matched := re.search(r"(slides|video|note)/(\d+)", iesdouyin_url)):
-                raise ValueError(f"无法从 {share_url} 中解析出 ID")
+                raise ParseError(f"无法从 {share_url} 中解析出 ID")
             _type, video_id = matched[1], matched[2]
             if _type == "slides":
                 return await self.parse_slides(video_id)
@@ -132,13 +149,13 @@ class DouyinParser:
             except Exception as e:
                 logger.warning(f"解析失败 {url[:60]}, error: {e}", exc_info=True)
                 continue
-        raise RuntimeError("作品已删除，或资源直链获取失败, 请稍后再试")
+        raise VideoFetchError("作品已删除，或资源直链获取失败, 请稍后再试")
 
     async def parse_slides(self, video_id: str) -> ParseResult:
         """解析多视频链接（如：视频合集、直播回放等）"""
         try:
             url = self._build_m_douyin_url("video", video_id)
-            async with AsyncClient() as client:
+            async with AsyncClient(timeout=config.HTTP_TIMEOUT) as client:
                 response = await client.get(url, headers=self.ios_headers)
                 response.raise_for_status()
                 text = response.text
@@ -158,12 +175,12 @@ class DouyinParser:
             )
         except Exception as e:
             logger.error(f"解析抖音视频失败: {e}", exc_info=True)
-            raise e
+            raise VideoFetchError(f"解析抖音视频失败: {e!s}") from e
 
 
 async def get_redirect_url(url: str) -> str:
     """获取重定向后的URL"""
-    async with AsyncClient() as client:
+    async with AsyncClient(timeout=config.HTTP_TIMEOUT) as client:
         response = await client.get(url, headers=IOS_HEADER, follow_redirects=True)
         return str(response.url)
 
@@ -188,8 +205,18 @@ async def extract_video_id(text: str) -> str:
 douyin_parser = DouyinParser()
 
 
-async def get_video_info(video_id: str) -> dict | str:
-    """获取抖音视频信息"""
+async def get_video_info(video_id: str) -> dict:
+    """获取抖音视频信息
+
+    Args:
+        video_id: 视频 ID
+
+    Returns:
+        包含 url, headers, title 的字典
+
+    Raises:
+        VideoFetchError: 获取视频信息失败
+    """
     logger.info(f"尝试获取抖音视频信息: {video_id}")
     try:
         share_url = f"https://www.douyin.com/video/{video_id}"
@@ -197,6 +224,8 @@ async def get_video_info(video_id: str) -> dict | str:
         logger.info(f"获取到视频信息: {video_info.video_url}")
 
         return {"url": video_info.video_url, "headers": IOS_HEADER, "title": video_info.title}
+    except VideoFetchError:
+        raise
     except Exception as e:
         logger.error(f"解析抖音视频失败: {e}", exc_info=True)
-        return f"获取视频信息失败: {e!s}"
+        raise VideoFetchError(f"获取视频信息失败: {e!s}") from e

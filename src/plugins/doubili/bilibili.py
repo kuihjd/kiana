@@ -10,7 +10,7 @@ config = get_plugin_config(Config)
 
 async def get_redirect_url(url: str, headers: dict) -> str:
     """获取重定向后的URL"""
-    async with AsyncClient(follow_redirects=True) as client:
+    async with AsyncClient(follow_redirects=True, timeout=config.HTTP_TIMEOUT) as client:
         response = await client.get(url, headers=headers)
         return str(response.url)
 
@@ -165,14 +165,28 @@ async def extract_video_id(text: str) -> tuple[str, str]:
     return "", ""
 
 
-async def get_video_info(bvid: str | None = None, avid: int | None = None):
-    """获取 Bilibili 视频详细信息"""
+async def get_video_info(bvid: str | None = None, avid: int | None = None) -> dict:
+    """获取 Bilibili 视频详细信息
+
+    Args:
+        bvid: BV 号
+        avid: AV 号
+
+    Returns:
+        视频信息字典
+
+    Raises:
+        APIError: 参数缺失或 API 返回错误
+        VideoDurationExceededError: 视频时长超限
+    """
+    from .exceptions import APIError, VideoDurationExceededError
+
     if not bvid and not avid:
-        return "必须提供 bvid 或 avid 参数！"
+        raise APIError("必须提供 bvid 或 avid 参数！")
 
     params = {"bvid": bvid, "aid": avid}
 
-    async with AsyncClient(follow_redirects=True) as client:
+    async with AsyncClient(follow_redirects=True, timeout=config.HTTP_TIMEOUT) as client:
         response = await client.get(
             config.BILIBILI_VIEW_API_URL, headers=config.API_HEADERS, params=params
         )
@@ -180,23 +194,39 @@ async def get_video_info(bvid: str | None = None, avid: int | None = None):
         data = response.json()
 
         if data.get("code") != 0:
-            return f"获取视频信息失败：{data.get('message', '未知错误')}"
+            raise APIError(
+                f"获取视频信息失败：{data.get('message', '未知错误')}",
+                code=data.get("code"),
+            )
 
-        if data["data"]["duration"] > config.MAX_VIDEO_DURATION:
-            return f"视频时长超过{config.MAX_VIDEO_DURATION / 60:.1f}分钟，无法下载"
+        duration = data["data"]["duration"]
+        if duration > config.MAX_VIDEO_DURATION:
+            raise VideoDurationExceededError(duration, config.MAX_VIDEO_DURATION)
 
         return data["data"]
 
 
-async def get_video_stream(bvid: str | None = None, avid: int | None = None) -> dict | str:
-    """获取 Bilibili 视频流信息"""
+async def get_video_stream(bvid: str | None = None, avid: int | None = None) -> dict:
+    """获取 Bilibili 视频流信息
+
+    Args:
+        bvid: BV 号
+        avid: AV 号
+
+    Returns:
+        包含 url 和 headers 的字典
+
+    Raises:
+        APIError: API 返回错误或缺失 cid
+        VideoSizeExceededError: 视频大小超限
+    """
+    from .exceptions import APIError, VideoSizeExceededError
+
     video_info = await get_video_info(bvid=bvid, avid=avid)
-    if isinstance(video_info, str):  # 如果返回的是错误信息
-        return video_info
 
     cid = video_info.get("cid")
     if not cid:
-        return "未能获取视频的 cid！"
+        raise APIError("未能获取视频的 cid！")
 
     params = {
         "cid": cid,
@@ -207,7 +237,7 @@ async def get_video_stream(bvid: str | None = None, avid: int | None = None) -> 
     elif avid:
         params["avid"] = avid
 
-    async with AsyncClient(follow_redirects=True) as client:
+    async with AsyncClient(follow_redirects=True, timeout=config.HTTP_TIMEOUT) as client:
         response = await client.get(
             config.BILIBILI_API_URL, headers=config.API_HEADERS, params=params
         )
@@ -215,12 +245,16 @@ async def get_video_stream(bvid: str | None = None, avid: int | None = None) -> 
         data = response.json()
 
         if data.get("code") != 0:
-            return f"获取视频信息失败：{data.get('message', '未知错误')}"
+            raise APIError(
+                f"获取视频信息失败：{data.get('message', '未知错误')}",
+                code=data.get("code"),
+            )
 
         video_url = data["data"]["durl"][0]["url"]
         video_size = int(data["data"]["durl"][0]["size"])
+        max_size_mb = config.MAX_VIDEO_SIZE / 1024 / 1024
 
         if video_size > config.MAX_VIDEO_SIZE:
-            return f"视频大小超过{config.MAX_VIDEO_SIZE / 1024 / 1024:.1f}MB，无法下载"
+            raise VideoSizeExceededError(video_size / 1024 / 1024, max_size_mb)
 
         return {"url": video_url, "headers": config.API_HEADERS}

@@ -42,3 +42,7 @@ class Config(BaseModel):
     # 视频限制
     MAX_VIDEO_SIZE: int = 50 * 1024 * 1024  # 最大视频大小(bytes)
     MAX_VIDEO_DURATION: int = 300  # 最大视频时长(秒)
+
+    # HTTP 超时配置
+    HTTP_TIMEOUT: float = 30.0  # 常规 HTTP 请求超时（秒）
+    DOWNLOAD_TIMEOUT: float = 60.0  # 下载请求超时（秒）
