@@ -133,16 +133,20 @@ scheduler = require("nonebot_plugin_apscheduler").scheduler
 driver = get_driver()
 
 db = get_db()
-db.ensure_schema(
-    [
-        """
-        CREATE TABLE IF NOT EXISTS gold_price_history (
-            timestamp REAL PRIMARY KEY,
-            price REAL NOT NULL
-        )
-        """
-    ]
-)
+
+
+def _init_gold_schema() -> None:
+    """初始化金价历史表 schema"""
+    db.ensure_schema(
+        [
+            """
+            CREATE TABLE IF NOT EXISTS gold_price_history (
+                timestamp REAL PRIMARY KEY,
+                price REAL NOT NULL
+            )
+            """
+        ]
+    )
 
 
 async def load_price_history() -> None:
@@ -339,7 +343,9 @@ async def _(bot: Bot, event: Event, matches: tuple[str, str] = RegexGroup()):
 
 
 @driver.on_startup
-async def _():
+async def init_gold_plugin():
+    """初始化金价插件：创建表并加载历史数据"""
+    _init_gold_schema()
     await load_price_history()
 
 

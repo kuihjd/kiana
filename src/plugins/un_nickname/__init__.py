@@ -1,3 +1,4 @@
+from nonebot import get_driver
 from nonebot.plugin import PluginMetadata
 
 from .config import Config
@@ -10,8 +11,14 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-# 初始化数据库 schema
-ensure_schema()
+driver = get_driver()
+
+
+@driver.on_startup
+async def init_nickname_schema():
+    """在 NoneBot 启动时初始化数据库 schema"""
+    ensure_schema()
+
 
 # 导入 handlers 触发 matcher 注册
 from . import handlers  # noqa: E402
