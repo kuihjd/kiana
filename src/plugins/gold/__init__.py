@@ -272,7 +272,7 @@ def generate_chart(window_seconds: int | None = None) -> bytes:
         # 转换为本地时间
         times_dt = [datetime.fromtimestamp(t).astimezone() for t in times]
 
-        plt.plot(times_dt, prices)  # type: ignore[arg-type]
+        plt.plot(times_dt, prices)
         plt.grid(True)
 
         fig.autofmt_xdate()
