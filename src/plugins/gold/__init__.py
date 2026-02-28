@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import httpx
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from nonebot import get_driver, get_plugin_config, logger, on_fullmatch, on_regex, require
 from nonebot.adapters.onebot.v11 import (
@@ -274,10 +275,13 @@ def generate_chart(window_seconds: int | None = None) -> bytes:
             window_data = list(price_history)
 
         times, prices = zip(*window_data, strict=False)
-        # 转换为本地时间
+        # 先转本地时间，再转 Matplotlib 可绘制的日期数值
         times_dt = [datetime.fromtimestamp(t).astimezone() for t in times]
+        times_num = [mdates.date2num(dt) for dt in times_dt]
 
-        plt.plot(times_dt, prices)
+        plt.plot(times_num, prices)
+        axis = plt.gca()
+        axis.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
         plt.grid(True)
 
         fig.autofmt_xdate()
