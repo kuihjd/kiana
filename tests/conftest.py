@@ -16,6 +16,7 @@ async def load_plugins(_nonebot_init: None):
     from nonebot import load_plugin
 
     load_plugin("src.plugins.fund")
+    load_plugin("src.plugins.gold")
 
 
 @pytest.fixture(autouse=True)
