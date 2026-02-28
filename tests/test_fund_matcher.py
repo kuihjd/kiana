@@ -37,6 +37,15 @@ def create_fake_group_message_event(
     )
 
 
+def expect_bot_not_muted(ctx, group_id: int = 654321, self_id: int = 987654321) -> None:
+    """声明预期的禁言检查 API 调用"""
+    ctx.should_call_api(
+        "get_group_member_info",
+        {"group_id": group_id, "user_id": self_id, "no_cache": True},
+        result={"shut_up_timestamp": 0},
+    )
+
+
 @pytest.mark.asyncio
 async def test_fund_query_matcher_regex_match(app: App):
     """测试 fund_query matcher 的正则匹配"""
@@ -68,14 +77,15 @@ async def test_fund_query_matcher_regex_not_match(app: App):
 @pytest.mark.asyncio
 async def test_fund_query_matcher_etf_code(app: App):
     """测试 ETF 代码的正则匹配"""
+    from nonebot.adapters.onebot.v11 import Bot as OneBotV11Bot
+
     from src.plugins.fund import fund_query
 
-    async with app.test_matcher(fund_query) as ctx:
-        bot = ctx.create_bot(base=Bot, self_id="987654321")
-
+    async with app.test_api() as ctx:
+        bot = ctx.create_bot(base=OneBotV11Bot, self_id="987654321")
         event = create_fake_group_message_event("510300")
-        ctx.receive_event(bot, event)
-        ctx.should_pass_rule()
+        result = await fund_query.rule(bot, event, {})
+        assert result is True
 
 
 @pytest.mark.asyncio
@@ -102,14 +112,15 @@ async def test_fund_query_matcher_stock_code_with_suffix(app: App):
 @pytest.mark.asyncio
 async def test_fund_query_matcher_beijing_stock(app: App):
     """测试北交所股票代码匹配"""
+    from nonebot.adapters.onebot.v11 import Bot as OneBotV11Bot
+
     from src.plugins.fund import fund_query
 
-    async with app.test_matcher(fund_query) as ctx:
-        bot = ctx.create_bot(base=Bot, self_id="987654321")
-
+    async with app.test_api() as ctx:
+        bot = ctx.create_bot(base=OneBotV11Bot, self_id="987654321")
         event = create_fake_group_message_event("43123456.BJ")
-        ctx.receive_event(bot, event)
-        ctx.should_pass_rule()
+        result = await fund_query.rule(bot, event, {})
+        assert result is True
 
 
 @pytest.mark.asyncio
@@ -139,6 +150,7 @@ async def test_fund_query_handler_with_mocked_data(app: App):
             bot = ctx.create_bot(base=Bot, self_id="987654321")
             event = create_fake_group_message_event("002170")
 
+            expect_bot_not_muted(ctx)
             ctx.receive_event(bot, event)
             ctx.should_pass_rule()
 
@@ -163,15 +175,14 @@ async def test_fund_query_handler_with_unknown_code(app: App):
     """测试未知代码类型的处理（静默失败）"""
     from src.plugins.fund import CodeType, fund_query
 
-    async with app.test_matcher(fund_query) as ctx:
-        bot = ctx.create_bot(base=Bot, self_id="987654321")
+    with patch("src.plugins.fund.identify_code_type") as mock_identify:
+        mock_identify.return_value = CodeType.UNKNOWN
 
-        # 使用一个匹配正则但无法识别类型的代码
-        # 由于正则只允许特定格式，这里我们 mock identify_code_type
-        with patch("src.plugins.fund.identify_code_type") as mock_identify:
-            mock_identify.return_value = CodeType.UNKNOWN
+        async with app.test_matcher(fund_query) as ctx:
+            bot = ctx.create_bot(base=Bot, self_id="987654321")
 
             event = create_fake_group_message_event("000000")
+            expect_bot_not_muted(ctx)
             ctx.receive_event(bot, event)
             ctx.should_pass_rule()
 
@@ -245,21 +256,23 @@ async def test_fund_query_multiple_codes(app: App):
         ("000001.SZ", "股票"),
     ]
 
-    for code, expected_type in test_cases:
+    for idx, (code, expected_type) in enumerate(test_cases):
         with patch("src.plugins.fund.query_by_code_type") as mock_query:
             mock_query.return_value = (f"{expected_type}信息", None)
 
             async with app.test_matcher(fund_query) as ctx:
                 bot = ctx.create_bot(base=Bot, self_id="987654321")
-                event = create_fake_group_message_event(code)
+                group_id = 654321 + idx
+                event = create_fake_group_message_event(code, group_id=group_id)
 
+                expect_bot_not_muted(ctx, group_id=group_id)
                 ctx.receive_event(bot, event)
                 ctx.should_pass_rule()
 
                 ctx.should_call_api(
                     "send_group_forward_msg",
                     {
-                        "group_id": 654321,
+                        "group_id": group_id,
                         "messages": [
                             {
                                 "type": "node",

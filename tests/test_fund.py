@@ -36,7 +36,8 @@ async def test_fund_query_002170_output_consistency(fund_plugin):
 @pytest.mark.asyncio
 async def test_fund_query_002170_with_mocked_data():
     """测试代码 002170 的格式化输出一致性"""
-    from src.plugins.fund import CodeType, format_fund_info, identify_code_type
+    from src.plugins.fund import CodeType, identify_code_type
+    from src.plugins.fund.formatters import format_fund_info
 
     code_type = identify_code_type("002170")
     assert code_type == CodeType.OFF_MARKET_FUND, (
@@ -127,7 +128,7 @@ async def test_fund_code_identification_consistency():
 async def test_fund_format_structure_consistency():
     import pandas as pd
 
-    from src.plugins.fund import format_fund_info
+    from src.plugins.fund.formatters import format_fund_info
 
     basic_info_df = pd.DataFrame(
         {"item": ["基金名称", "基金代码"], "value": ["测试基金", "TEST001"]}

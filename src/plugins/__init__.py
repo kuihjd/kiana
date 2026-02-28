@@ -23,6 +23,53 @@ _mute_cache: dict[int, tuple[float, bool, int]] = {}
 _CACHE_TTL = 60.0  # 缓存有效期（秒）
 
 
+def _skip_mute_check(event: MessageEvent) -> bool:
+    """判断是否应跳过禁言检查。"""
+    return not isinstance(event, GroupMessageEvent)
+
+
+def _check_cached_mute_status(group_id: int, current_time: float) -> bool:
+    """检查缓存禁言状态，返回是否可直接放行。"""
+    cached = _mute_cache.get(group_id)
+    if cached is None:
+        return False
+
+    cache_time, is_muted, mute_end_timestamp = cached
+    if current_time - cache_time >= _CACHE_TTL:
+        return False
+
+    if is_muted and mute_end_timestamp > current_time:
+        remaining_minutes = int((mute_end_timestamp - current_time) // 60)
+        logger.debug(
+            f"[缓存] 机器人在群 {group_id} 中被禁言，"
+            f"剩余 {remaining_minutes} 分钟，跳过消息处理"
+        )
+        raise IgnoredException("Bot is muted in this group (cached)")
+
+    return not is_muted
+
+
+async def _refresh_mute_status(bot: Bot, group_id: int, current_time: float) -> None:
+    """查询并更新禁言状态缓存。"""
+    member_info = await bot.get_group_member_info(
+        group_id=group_id,
+        user_id=int(bot.self_id),
+        no_cache=True,
+    )
+
+    shut_up_timestamp = member_info.get("shut_up_timestamp", 0)
+    is_muted = shut_up_timestamp > current_time
+    _mute_cache[group_id] = (current_time, is_muted, shut_up_timestamp)
+
+    if not is_muted:
+        return
+
+    remaining_seconds = shut_up_timestamp - current_time
+    remaining_minutes = int(remaining_seconds // 60)
+    logger.warning(f"检测到机器人在群 {group_id} 中被禁言，剩余 {remaining_minutes} 分钟，跳过消息处理")
+    raise IgnoredException("Bot is muted in this group")
+
+
 @run_preprocessor
 async def check_bot_mute_status(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     """
@@ -41,59 +88,22 @@ async def check_bot_mute_status(bot: Bot, event: MessageEvent, matcher: Matcher)
     Raises:
         IgnoredException: 当bot被禁言时，阻止Matcher继续执行
     """
-    # 只检查群消息事件
-    if not isinstance(event, GroupMessageEvent):
+    if _skip_mute_check(event):
         return
 
     group_id = event.group_id
     current_time = time.time()
 
-    # 检查缓存是否有效
-    if group_id in _mute_cache:
-        cache_time, is_muted, mute_end_timestamp = _mute_cache[group_id]
+    if _check_cached_mute_status(group_id, current_time):
+        return
 
-        # 缓存未过期
-        if current_time - cache_time < _CACHE_TTL:
-            if is_muted and mute_end_timestamp > current_time:
-                remaining_minutes = int((mute_end_timestamp - current_time) // 60)
-                logger.debug(
-                    f"[缓存] 机器人在群 {group_id} 中被禁言，"
-                    f"剩余 {remaining_minutes} 分钟，跳过消息处理"
-                )
-                raise IgnoredException("Bot is muted in this group (cached)")
-            if not is_muted:
-                # 缓存显示未禁言，直接放行
-                return
-
-    # 缓存过期或不存在，重新查询
     try:
-        member_info = await bot.get_group_member_info(
-            group_id=group_id, user_id=int(bot.self_id), no_cache=True
-        )
-
-        shut_up_timestamp = member_info.get("shut_up_timestamp", 0)
-        is_muted = shut_up_timestamp > current_time
-
-        # 更新缓存
-        _mute_cache[group_id] = (current_time, is_muted, shut_up_timestamp)
-
-        if is_muted:
-            remaining_seconds = shut_up_timestamp - current_time
-            remaining_minutes = int(remaining_seconds // 60)
-
-            logger.warning(
-                f"检测到机器人在群 {group_id} 中被禁言，剩余 {remaining_minutes} 分钟，跳过消息处理"
-            )
-            raise IgnoredException("Bot is muted in this group")
-
+        await _refresh_mute_status(bot, group_id, current_time)
     except ActionFailed as e:
-        # API调用失败，记录警告但不阻止正常流程
         logger.warning(f"获取群成员信息失败 (群 {group_id}): {e}")
     except IgnoredException:
-        # 重新抛出IgnoredException
         raise
     except Exception as e:
-        # 其他异常，记录错误但不阻止正常流程
         logger.error(f"检查禁言状态时发生未预期的错误: {e}")
 
 

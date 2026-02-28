@@ -483,6 +483,46 @@ async def download_images_concurrent(
     return image_segments
 
 
+async def _extract_xiaohongshu_url(event: MessageEvent, state: T_State) -> str:
+    """提取小红书目标 URL，优先使用检测阶段缓存。"""
+    if (card_url := state.get("card_url")) and (
+        resolved_url := await _process_xiaohongshu_url(card_url)
+    ):
+        return resolved_url
+
+    message = str(event.message).strip()
+    return await xiaohongshu.extract_url(message)
+
+
+async def _build_xiaohongshu_media_segments(note_info: dict[str, Any]) -> list[MessageSegment]:
+    """根据笔记内容下载并构建媒体消息段。"""
+    pic_urls = note_info.get("pic_urls", [])
+    if pic_urls:
+        limited_pic_urls = pic_urls[:9]
+        logger.info(f"图片数量{len(limited_pic_urls)}张，使用并发下载（max_concurrent=5）")
+        return await download_images_concurrent(limited_pic_urls, max_concurrent=5)
+
+    video_url = note_info.get("video_url")
+    if video_url:
+        video_data = await download_media(video_url)
+        return [MessageSegment.video(video_data)]
+
+    return []
+
+
+async def _send_xiaohongshu_note(bot: Bot, event: MessageEvent, note_info: dict[str, Any]) -> None:
+    """发送小红书笔记文本和媒体内容。"""
+    info_text = f"{note_info['title']}\n作者: {note_info['author']}"
+    media_segments = await _build_xiaohongshu_media_segments(note_info)
+
+    contents: list[str | MessageSegment] = [info_text]
+    if media_segments:
+        contents.extend(media_segments)
+
+    forward_nodes = create_forward_nodes(bot, contents)
+    await send_forward_message(bot, event, forward_nodes)
+
+
 @xiaohongshu_matcher.handle()
 async def handle_xiaohongshu_message(
     bot: Bot,
@@ -494,16 +534,7 @@ async def handle_xiaohongshu_message(
     if not config.xiaohongshu_cookie:
         await xiaohongshu_matcher.finish("未配置小红书 cookie，无法解析笔记内容")
 
-    url = ""
-
-    # 优先使用检查阶段缓存的卡片URL（避免重复解析）
-    if card_url := state.get("card_url"):
-        url = await _process_xiaohongshu_url(card_url)
-
-    # 回退到纯文本提取
-    if not url:
-        message = str(event.message).strip()
-        url = await xiaohongshu.extract_url(message)
+    url = await _extract_xiaohongshu_url(event, state)
 
     if not url:
         _log_matcher_event("Xiaohongshu", event, success=False, message="未提取到笔记链接")
@@ -512,29 +543,8 @@ async def handle_xiaohongshu_message(
     _log_matcher_event("Xiaohongshu", event, f"{url[:50]}...", id_type="URL")
 
     try:
-        # 1. 获取笔记信息
         note_info = await xiaohongshu.get_note_info(url)
-
-        info_text = f"{note_info['title']}\n作者: {note_info['author']}"
-
-        # 2. 根据内容类型处理
-        media_segments: list[MessageSegment] = []
-        if note_info["pic_urls"]:
-            # 处理图片内容 - 使用并发下载提升性能
-            pic_urls = note_info["pic_urls"][:9]  # 最多处理9张图片
-            logger.info(f"图片数量{len(pic_urls)}张，使用并发下载（max_concurrent=5）")
-            media_segments = await download_images_concurrent(pic_urls, max_concurrent=5)
-        elif note_info["video_url"]:
-            # 处理视频内容
-            video_data = await download_media(note_info["video_url"])
-            media_segments = [MessageSegment.video(video_data)]
-
-        # 统一发送转发消息
-        contents: list[str | MessageSegment] = [info_text]
-        if media_segments:
-            contents.extend(media_segments)
-        forward_nodes = create_forward_nodes(bot, contents)
-        await send_forward_message(bot, event, forward_nodes)
+        await _send_xiaohongshu_note(bot, event, note_info)
 
     except DoubiliError as e:
         # 记录详细错误到日志

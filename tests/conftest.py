@@ -18,6 +18,14 @@ async def load_plugins(_nonebot_init: None):
     load_plugin("src.plugins.fund")
 
 
+@pytest.fixture(autouse=True)
+def reset_global_mute_cache() -> None:
+    """每个用例前重置全局禁言缓存，避免用例间状态污染。"""
+    from src import plugins as global_plugins
+
+    global_plugins._mute_cache.clear()
+
+
 @pytest_asyncio.fixture
 async def fund_plugin():
     """获取 fund 插件实例"""
