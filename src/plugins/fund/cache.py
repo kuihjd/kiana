@@ -75,7 +75,7 @@ class SafeCache[T]:
                 return entry.data
 
             # 缓存过期或不存在，尝试获取新数据
-            logger.info(f"{data_type}缓存过期，重新获取数据 (key: {key})")
+            logger.debug(f"{data_type}缓存过期，重新获取数据 (key: {key})")
             last_error = None
 
             try:
@@ -86,7 +86,7 @@ class SafeCache[T]:
                 # 维护缓存大小
                 self._cleanup_cache()
 
-                logger.info(f"{data_type}数据已缓存 (key: {key})")
+                logger.debug(f"{data_type}数据已缓存 (key: {key})")
                 return new_data
 
             except Exception as e:

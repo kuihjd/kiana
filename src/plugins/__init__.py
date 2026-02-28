@@ -104,7 +104,7 @@ async def check_bot_mute_status(bot: Bot, event: MessageEvent, matcher: Matcher)
     except IgnoredException:
         raise
     except Exception as e:
-        logger.error(f"检查禁言状态时发生未预期的错误: {e}")
+        logger.error(f"检查禁言状态时发生未预期的错误: {e}", exc_info=True)
 
 
 @run_postprocessor

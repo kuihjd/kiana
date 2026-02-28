@@ -43,12 +43,12 @@ async def _query_off_market_fund(code: str) -> tuple[str | None, str | None]:
         (info_text, holdings_text) 元组
     """
     if not _get_config_value("fund_enable_off_market", True):
-        logger.warning(f"场外基金查询已禁用: {code}")
+        logger.debug(f"场外基金查询已禁用: {code}")
         return None, None
 
     fund_data = await get_fund_data(code)
     if not fund_data["success"]:
-        logger.warning(f"场外基金数据获取失败: {code}")
+        logger.info(f"场外基金数据获取失败: {code}")
         return None, None
 
     info_text = format_fund_info(code, fund_data)
@@ -59,7 +59,7 @@ async def _query_off_market_fund(code: str) -> tuple[str | None, str | None]:
     if holdings_data["success"]:
         holdings_text = format_fund_holdings(code, holdings_data)
     else:
-        logger.warning(f"获取基金持仓数据失败: {holdings_data.get('error', '未知错误')}")
+        logger.info(f"获取基金持仓数据失败: {holdings_data.get('error', '未知错误')}")
 
     return info_text, holdings_text
 
@@ -79,12 +79,12 @@ async def _query_market_fund(
     """
     config_key = f"fund_enable_{fund_type}"
     if not _get_config_value(config_key, True):
-        logger.warning(f"{type_name}查询已禁用: {code}")
+        logger.debug(f"{type_name}查询已禁用: {code}")
         return None, None
 
     fund_data = await get_market_fund_data(code, fund_type)
     if not fund_data["success"]:
-        logger.warning(f"{type_name}数据获取失败: {code}")
+        logger.info(f"{type_name}数据获取失败: {code}")
         return None, None
 
     info_text = format_etf_info(code, fund_data)
@@ -101,12 +101,12 @@ async def _query_stock(code: str) -> tuple[str | None, str | None]:
         (info_text, None) 元组
     """
     if not _get_config_value("fund_enable_stocks", True):
-        logger.warning(f"股票查询已禁用: {code}")
+        logger.debug(f"股票查询已禁用: {code}")
         return None, None
 
     stock_data = await get_stock_data(code)
     if not stock_data["success"]:
-        logger.warning(f"股票数据获取失败: {code}")
+        logger.info(f"股票数据获取失败: {code}")
         return None, None
 
     info_text = await format_stock_info(code, stock_data)
@@ -123,12 +123,12 @@ async def _query_index(code: str) -> tuple[str | None, str | None]:
         (info_text, None) 元组
     """
     if not _get_config_value("fund_enable_index", True):
-        logger.warning(f"指数查询已禁用: {code}")
+        logger.debug(f"指数查询已禁用: {code}")
         return None, None
 
     index_data = await get_index_data(code)
     if not index_data["success"]:
-        logger.warning(f"指数数据获取失败: {code}")
+        logger.info(f"指数数据获取失败: {code}")
         return None, None
 
     info_text = format_index_info(code, index_data)

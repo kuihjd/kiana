@@ -105,7 +105,7 @@ async def handle_fund_query(bot: Bot, event: MessageEvent) -> None:
             forward_nodes = create_forward_nodes(bot, contents)
             await send_forward_message(bot, event, forward_nodes)
         else:
-            logger.warning(f"未能获取到数据: {code}")
+            logger.info(f"未能获取到数据: {code}")
             # 静默失败，不发送任何消息
 
     except MatcherException:

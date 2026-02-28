@@ -211,13 +211,13 @@ def _fetch_gold_price_sync() -> float | None:
             return None
 
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP 状态错误: {e}")
+        logger.error(f"HTTP 状态错误: {e}", exc_info=True)
         return None
     except httpx.RequestError as e:
-        logger.error(f"HTTP 请求失败: {e}")
+        logger.error(f"HTTP 请求失败: {e}", exc_info=True)
         return None
     except (KeyError, ValueError) as e:
-        logger.error(f"解析金价数据失败: {e}")
+        logger.error(f"解析金价数据失败: {e}", exc_info=True)
         return None
     except Exception as e:
         logger.error(f"获取金价失败（未知错误）: {e}", exc_info=True)
@@ -348,6 +348,7 @@ async def _(bot: Bot, event: Event, matches: tuple[str, str] = RegexGroup()):
         image_data = await loop.run_in_executor(_chart_executor, generate_chart, custom_window)
         await gold_chart.send(MessageSegment.image(image_data))
     except Exception as e:
+        logger.error(f"生成金价走势图失败: {e}", exc_info=True)
         await gold_chart.send(f"生成图表失败: {e!s}")
 
 

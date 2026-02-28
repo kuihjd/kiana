@@ -122,7 +122,7 @@ async def get_etf_spot_data_cached() -> pd.DataFrame | None:
     except Exception as e:
         # 检查是否启用数据源切换
         if not _get_config_value("fund_enable_data_source_fallback", True):
-            logger.error(f"东方财富 ETF 接口失败且数据源切换已禁用: {e}")
+            logger.error(f"东方财富 ETF 接口失败且数据源切换已禁用: {e}", exc_info=True)
             return None
 
         # 主数据源失败，尝试备用数据源
@@ -169,7 +169,7 @@ async def get_fund_data(fund_code: str) -> dict:
         )
 
         if basic_info_df.empty or len(basic_info_df) == 0:
-            logger.warning(f"未找到场外基金 {fund_code} 的基本信息")
+            logger.debug(f"未找到场外基金 {fund_code} 的基本信息")
             return {"success": False, "error": "未找到基金信息"}
 
         # 获取基金业绩数据
@@ -184,7 +184,7 @@ async def get_fund_data(fund_code: str) -> dict:
 
         # 检查净值数据是否有效
         if nav_df.empty or len(nav_df) == 0:
-            logger.warning(f"基金 {fund_code} 净值数据为空")
+            logger.debug(f"基金 {fund_code} 净值数据为空")
             return {"success": False, "error": "净值数据不可用"}
 
         return {
@@ -223,7 +223,7 @@ async def get_market_fund_data(fund_code: str, fund_type: Literal["etf", "lof"])
         # 查找指定基金
         fund_info = spot_df[spot_df["代码"] == fund_code]
         if fund_info.empty:
-            logger.warning(f"未找到{fund_type.upper()}基金 {fund_code}")
+            logger.debug(f"未找到{fund_type.upper()}基金 {fund_code}")
             return {"success": False, "error": f"未找到{fund_type.upper()}基金代码"}
 
         # 获取历史数据
@@ -241,7 +241,7 @@ async def get_market_fund_data(fund_code: str, fund_type: Literal["etf", "lof"])
         )
 
         if hist_df.empty or len(hist_df) < 2:
-            logger.warning(f"{fund_type.upper()}基金 {fund_code} 历史数据不足")
+            logger.debug(f"{fund_type.upper()}基金 {fund_code} 历史数据不足")
             return {"success": False, "error": "历史数据不足"}
 
         return {"spot_info": fund_info.iloc[0], "hist_data": hist_df, "success": True}
@@ -294,7 +294,7 @@ async def get_stock_data(stock_code: str) -> dict:
         # 验证市场和代码的匹配性
         is_valid, error_msg = validate_market_code(code, market)
         if not is_valid:
-            logger.warning(error_msg)
+            logger.info(error_msg)
             return {"success": False, "error": error_msg}
 
         # 获取历史数据
@@ -312,7 +312,7 @@ async def get_stock_data(stock_code: str) -> dict:
         )
 
         if hist_df.empty or len(hist_df) < 2:
-            logger.warning(f"股票 {stock_code} 历史数据不足")
+            logger.debug(f"股票 {stock_code} 历史数据不足")
             return {"success": False, "error": "历史数据不足"}
 
         return {"hist_data": hist_df, "code": code, "market": market, "success": True}
@@ -332,7 +332,7 @@ async def get_stock_name(stock_code: str) -> str:
     """
     # 输入验证
     if not stock_code or not stock_code.strip():
-        logger.warning("股票代码为空")
+        logger.debug("股票代码为空")
         return "未知股票"
 
     try:
@@ -341,7 +341,7 @@ async def get_stock_name(stock_code: str) -> str:
 
         # 验证代码格式（6位数字）
         if not code.isdigit() or len(code) != 6:
-            logger.warning(f"无效的股票代码格式: {stock_code}")
+            logger.debug(f"无效的股票代码格式: {stock_code}")
             return f"股票 {stock_code}"
 
         # 使用现代的异步API（Python 3.9+）
@@ -355,11 +355,11 @@ async def get_stock_name(stock_code: str) -> str:
                 logger.debug(f"获取股票名称成功: {code} -> {stock_name}")
                 return str(stock_name)
 
-        logger.warning(f"未找到股票 {code} 的名称信息")
+        logger.debug(f"未找到股票 {code} 的名称信息")
         return f"股票 {stock_code}"
 
     except Exception as e:
-        logger.warning(f"获取股票名称失败 [{stock_code}]: {e}")
+        logger.debug(f"获取股票名称失败 [{stock_code}]: {e}")
         return f"股票 {stock_code}"
 
 
@@ -396,7 +396,7 @@ async def get_index_data(index_code: str) -> dict:
         )
 
         if hist_df.empty or len(hist_df) < 2:
-            logger.warning(f"指数 {index_code} 历史数据不足")
+            logger.debug(f"指数 {index_code} 历史数据不足")
             return {"success": False, "error": "历史数据不足"}
 
         return {"hist_data": hist_df, "symbol": symbol, "code": index_code, "success": True}
