@@ -7,7 +7,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
-import aiohttp
+import httpx
 import matplotlib.pyplot as plt
 from nonebot import get_driver, get_plugin_config, logger, on_fullmatch, on_regex, require
 from nonebot.adapters.onebot.v11 import (
@@ -188,26 +188,19 @@ async def persist_price(timestamp: float, price: float) -> None:
     )
 
 
-async def fetch_gold_price() -> float | None:
-    """获取金价（aiohttp 异步版本）
-
-    使用 aiohttp 进行异步 HTTP 请求，避免阻塞事件循环
+def _fetch_gold_price_sync() -> float | None:
+    """同步获取金价
 
     Returns:
         float | None: 金价，失败时返回 None
     """
     try:
-        # 设置 10 秒超时
-        timeout = aiohttp.ClientTimeout(total=10)
-
-        async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
-            session.post(
-                config.API_URL, data=config.API_PAYLOAD, headers=config.API_HEADERS
-            ) as response,
-        ):
-            # 异步读取 JSON 响应
-            json_data = await response.json()
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(
+                config.API_URL, content=config.API_PAYLOAD, headers=config.API_HEADERS
+            )
+            response.raise_for_status()
+            json_data = response.json()
 
             # 解析金价数据
             if json_data.get("success"):
@@ -216,11 +209,11 @@ async def fetch_gold_price() -> float | None:
             logger.warning("API 返回 success=False")
             return None
 
-    except aiohttp.ClientError as e:
-        logger.error(f"HTTP 请求失败: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP 状态错误: {e}")
         return None
-    except TimeoutError:
-        logger.error("获取金价超时（10秒）")
+    except httpx.RequestError as e:
+        logger.error(f"HTTP 请求失败: {e}")
         return None
     except (KeyError, ValueError) as e:
         logger.error(f"解析金价数据失败: {e}")
@@ -228,6 +221,18 @@ async def fetch_gold_price() -> float | None:
     except Exception as e:
         logger.error(f"获取金价失败（未知错误）: {e}", exc_info=True)
         return None
+
+
+async def fetch_gold_price() -> float | None:
+    """获取金价
+
+    使用 asyncio.to_thread 包装同步请求，避免阻塞事件循环
+
+    Returns:
+        float | None: 金价，失败时返回 None
+    """
+    return await asyncio.to_thread(_fetch_gold_price_sync)
+
 
 
 @scheduler.scheduled_job("interval", seconds=config.price_fetch_interval)
