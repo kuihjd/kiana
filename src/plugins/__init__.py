@@ -90,7 +90,7 @@ async def check_bot_mute_status(bot: Bot, event: MessageEvent, matcher: Matcher)
     """
     if _skip_mute_check(event):
         return
-
+    assert isinstance(event, GroupMessageEvent)
     group_id = event.group_id
     current_time = time.time()
 
