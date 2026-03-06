@@ -254,11 +254,17 @@ async def get_fund_holdings(fund_code: str) -> dict:
     """获取基金十大重仓股信息"""
     try:
         current_year = datetime.now().year
+        holdings_df = pd.DataFrame()
 
-        # 获取基金持仓数据
-        holdings_df = await asyncio.to_thread(
-            ak.fund_portfolio_hold_em, symbol=fund_code, date=str(current_year)
-        )
+        # 年初时最新披露季度通常仍属于上一年，当前年份为空时回退到上一年。
+        for year in (current_year, current_year - 1):
+            holdings_df = await asyncio.to_thread(
+                ak.fund_portfolio_hold_em, symbol=fund_code, date=str(year)
+            )
+            if not holdings_df.empty:
+                if year != current_year:
+                    logger.info(f"基金 {fund_code} 持仓数据回退到 {year} 年")
+                break
 
         return {
             "holdings": holdings_df,
