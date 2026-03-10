@@ -3,6 +3,7 @@ import contextlib
 import json
 
 import websockets
+from websockets.exceptions import InvalidStatus, InvalidURI
 from nonebot import get_bot, get_driver, get_plugin_config, logger
 from nonebot.plugin import PluginMetadata
 
@@ -83,6 +84,22 @@ async def _ws_loop() -> None:
         except asyncio.CancelledError:
             logger.info("[Gotify] WebSocket 任务被取消")
             return
+        except InvalidURI as e:
+            logger.error(f"[Gotify] WebSocket 地址无效，停止重连: {e}")
+            return
+        except InvalidStatus as e:
+            status_code = e.response.status_code
+            if status_code in {401, 403, 404}:
+                logger.error(
+                    f"[Gotify] WebSocket 握手失败，状态码 {status_code}，请检查 gotify_url 或 gotify_client_token，停止重连"
+                )
+                return
+            consecutive_failures += 1
+            delay = min(reconnect_interval * (2 ** (consecutive_failures - 1)), 300)
+            logger.warning(
+                f"[Gotify] WebSocket 握手失败，状态码 {status_code}，{delay}s 后重连"
+            )
+            await asyncio.sleep(delay)
         except Exception as e:
             consecutive_failures += 1
             delay = min(reconnect_interval * (2 ** (consecutive_failures - 1)), 300)
