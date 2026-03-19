@@ -118,7 +118,7 @@ async def test_fund_query_matcher_beijing_stock(app: App):
 
     async with app.test_api() as ctx:
         bot = ctx.create_bot(base=OneBotV11Bot, self_id="987654321")
-        event = create_fake_group_message_event("43123456.BJ")
+        event = create_fake_group_message_event("920029.BJ")
         result = await fund_query.rule(bot, event, {})
         assert result is True
 

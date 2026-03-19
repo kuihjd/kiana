@@ -26,7 +26,7 @@ class CodeType(Enum):
 
 def _identify_with_exchange_suffix(code: str, pure_code: str, exchange: str) -> CodeType:
     """识别带交易所后缀的代码类型"""
-    # 北交所股票：8位代码 + .BJ
+    # 北交所股票：6位代码 + .BJ
     if exchange == "BJ":
         return CodeType.STOCK
 
@@ -68,7 +68,7 @@ def identify_code_type(code: str) -> CodeType:
       * 50x/16x: 场内LOF
       * 00-09: 场外基金 (开放式基金)
       * 其他: 未知类型，需要权威查询
-    - 纯8位数字: 北交所股票（需带 .BJ 后缀）
+    - 北交所股票使用 6 位代码（需带 .BJ 后缀）
 
     Args:
         code: 代码字符串
@@ -79,12 +79,12 @@ def identify_code_type(code: str) -> CodeType:
     # 移除可能的空格
     code = code.strip().upper()
 
-    # 带交易所后缀的格式 (如 000001.SZ, 600000.SH, 43123456.BJ)
-    if re.match(r"^\d{6,8}\.(SZ|SH|BJ)$", code):
+    # 带交易所后缀的格式 (如 000001.SZ, 600000.SH, 920029.BJ)
+    if re.match(r"^\d{6}\.(SZ|SH|BJ)$", code):
         pure_code, exchange = code.split(".")
         return _identify_with_exchange_suffix(code, pure_code, exchange)
 
-    # 纯8位数字可能是北交所股票（但需要后缀确认）
+    # 纯8位数字不属于当前支持的证券代码格式
     if re.match(r"^\d{8}$", code):
         return CodeType.UNKNOWN
 

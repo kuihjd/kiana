@@ -38,13 +38,14 @@ STOCK_PREFIXES_SZ: Final[set[str]] = {
     "200",  # 补充：SZSE B 股
 }
 
-# 北京证券交易所（BSE）：使用两位前缀（北交所代码为8位数字，前两位标识）
+# 北京证券交易所（BSE）：使用两位前缀（北交所代码为6位数字，前两位标识）
 # 使用 set 以实现 O(1) 查找性能（用于 in 操作）
 STOCK_PREFIXES_BJ: Final[set[str]] = {
     "43",  # 精选层历史代码
     "83",  # 北交所上市代码段
     "87",  # 北交所上市代码段
     "88",  # 北交所上市代码段
+    "92",  # 北交所 920 新代码段
 }
 
 
@@ -169,16 +170,16 @@ def is_shenzhen_stock(code: str) -> bool:
 
 def is_beijing_stock(code: str) -> bool:
     """判断代码是否为北京股票
-
-    注意：北交所股票代码为8位数字
+    
+    注意：北交所股票代码为6位数字
 
     Args:
-        code: 8位数字代码
+        code: 6位数字代码
 
     Returns:
         是否为北京股票
     """
-    return len(code) == 8 and code[:2] in STOCK_PREFIXES_BJ
+    return len(code) == 6 and code[:2] in STOCK_PREFIXES_BJ
 
 
 def is_etf(code: str) -> bool:
@@ -299,7 +300,7 @@ def validate_market_code(code: str, market: str) -> tuple[bool, str | None]:
     """验证代码和市场的匹配性
 
     Args:
-        code: 6位或8位数字代码（北交所为8位）
+        code: 6位数字代码
         market: 市场标识（'sh'、'sz' 或 'bj'）
 
     Returns:
@@ -324,7 +325,7 @@ def validate_market_code(code: str, market: str) -> tuple[bool, str | None]:
             if not is_beijing_stock(code):
                 prefixes_str = _format_prefixes(STOCK_PREFIXES_BJ, simplify=False)
                 msg = f"股票代码 {code} 不属于北京市场(.BJ)，"
-                msg += f"北交所股票应为8位数字且以 {prefixes_str} 开头"
+                msg += f"北交所股票应为6位数字且以 {prefixes_str} 开头"
                 return (False, msg)
         case _:
             return False, f"未知的市场标识: {market}"
@@ -336,7 +337,7 @@ def infer_stock_market(code: str) -> str:
     """根据股票代码推断市场
 
     Args:
-        code: 6位或8位数字代码
+        code: 6位数字代码
 
     Returns:
         市场标识：'sh'、'sz' 或 'bj'

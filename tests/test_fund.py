@@ -113,6 +113,7 @@ async def test_fund_code_identification_consistency():
         ("163406", CodeType.LOF),  # 兴全合润混合LOF
         ("000001.SZ", CodeType.STOCK),  # 平安银行
         ("600000.SH", CodeType.STOCK),  # 浦发银行
+        ("920029.BJ", CodeType.STOCK),  # 开发科技
         ("000001.SH", CodeType.INDEX),  # 上证指数
         ("399001.SZ", CodeType.INDEX),  # 深证成指
     ]
@@ -179,6 +180,7 @@ async def test_fund_code_type_edge_cases():
         ("002170", CodeType.OFF_MARKET_FUND),  # 6位数字 - 场外基金
         ("000001.SZ", CodeType.STOCK),  # 带交易所后缀
         ("600000.SH", CodeType.STOCK),  # 带交易所后缀
+        ("920029.BJ", CodeType.STOCK),  # 北交所股票
         ("000001.SH", CodeType.INDEX),  # 指数
         ("399001.SZ", CodeType.INDEX),  # 指数
     ]

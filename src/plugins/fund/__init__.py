@@ -22,7 +22,7 @@ __plugin_meta__ = PluginMetadata(
         "- 场外基金: 018957、002170\n"
         "- 场内ETF: 510300、159915\n"
         "- 场内LOF: 163406、501018\n"
-        "- 个股(需带交易所): 000001.SZ、600000.SH、43123456.BJ\n"
+        "- 个股(需带交易所): 000001.SZ、600000.SH、920029.BJ\n"
         "- 指数: 000001.SH、399001.SZ"
     ),
     config=Config,
@@ -67,7 +67,7 @@ fund_group_rule = create_group_rule(
 
 
 fund_query = on_regex(
-    r"^(\d{6}|\d{6}\.(SZ|SH)|\d{8}\.BJ)$",
+    r"^(\d{6}|\d{6}\.(SZ|SH|BJ))$",
     rule=fund_group_rule,
     flags=re.IGNORECASE,
 )

@@ -22,7 +22,7 @@
 | 场内 LOF | 6位数字（50x/16x） | `163406`、`501018` |
 | A股（沪市） | 6位数字.SH | `600000.SH` |
 | A股（深市） | 6位数字.SZ | `000001.SZ` |
-| A股（北交所） | 8位数字.BJ | `43123456.BJ` |
+| A股（北交所） | 6位数字.BJ | `920029.BJ` |
 | 指数（上证） | 6位数字.SH | `000001.SH` |
 | 指数（深证） | 6位数字.SZ | `399001.SZ` |
 
@@ -140,4 +140,3 @@ Bot: [合并转发消息]
 | `fund_enable_off_market` | bool | true | 是否启用场外基金查询 |
 | `fund_enable_index` | bool | true | 是否启用指数查询 |
 | `fund_enable_data_source_fallback` | bool | true | 是否启用数据源切换 |
-
