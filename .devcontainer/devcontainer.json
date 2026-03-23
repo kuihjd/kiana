@@ -1,0 +1,47 @@
+{
+  "name": "kiana",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "init": true,
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/uv:1": {}
+  },
+  "containerEnv": {
+    "TZ": "Asia/Shanghai",
+    "HOST": "0.0.0.0",
+    "MPLBACKEND": "Agg"
+  },
+  "mounts": [
+    "source=kiana-uv-cache,target=/home/vscode/.cache/uv,type=volume"
+  ],
+  "forwardPorts": [
+    8080
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "NoneBot",
+      "onAutoForward": "notify"
+    }
+  },
+  "onCreateCommand": "bash -lc 'sudo mkdir -p /home/vscode/.cache/uv && sudo chown -R vscode:vscode /home/vscode/.cache/uv && if [ -f /etc/apt/sources.list.d/yarn.list ]; then sudo rm -f /etc/apt/sources.list.d/yarn.list; fi && sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg'",
+  "postCreateCommand": "mkdir -p data log && uv tool install --force nb-cli && uv sync --locked",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+          "tests"
+        ],
+        "python.analysis.typeCheckingMode": "standard"
+      }
+    }
+  }
+}
