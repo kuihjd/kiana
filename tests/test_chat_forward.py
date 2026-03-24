@@ -332,3 +332,58 @@ async def test_chat_forward_replays_from_archived_content_instead_of_message_id(
             },
             result={"message_id": 1004},
         )
+
+
+@pytest.mark.asyncio
+async def test_chat_forward_replaces_archived_image_with_placeholder(app: App) -> None:
+    """历史图片回放失败风险较高时，应降级为文本占位而不是原样重放。"""
+    from src.plugins.chat_forward import chat_forward
+    from src.plugins.message_archive.db import archive_message_event
+
+    archived_message = Message(
+        [
+            MessageSegment.text("看图 "),
+            MessageSegment.image("https://example.com/demo.png"),
+            MessageSegment.text(" 完毕"),
+        ]
+    )
+    await archive_message_event(
+        create_group_event(
+            archived_message,
+            message_id=61,
+            user_id=10001,
+            group_id=99991,
+            nickname="用户A",
+        )
+    )
+
+    async with app.test_matcher(chat_forward) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="987654321")
+        event = create_group_event("打包消息 1", message_id=999, group_id=99991)
+
+        expect_bot_not_muted(ctx, group_id=99991)
+        ctx.receive_event(bot, event)
+        ctx.should_pass_rule()
+        ctx.should_call_api(
+            "send_group_forward_msg",
+            {
+                "group_id": 99991,
+                "messages": [
+                    {
+                        "type": "node",
+                        "data": {
+                            "name": "用户A",
+                            "uin": "10001",
+                            "content": Message(
+                                [
+                                    MessageSegment.text("看图 "),
+                                    MessageSegment.text("[图片]"),
+                                    MessageSegment.text(" 完毕"),
+                                ]
+                            ),
+                        },
+                    }
+                ],
+            },
+            result={"message_id": 1005},
+        )

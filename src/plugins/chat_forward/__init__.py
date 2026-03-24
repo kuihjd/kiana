@@ -125,6 +125,9 @@ def _build_face_segment(segment: MessageSegment) -> MessageSegment | None:
 
 
 def _build_media_segment(segment_type: str, segment: MessageSegment) -> MessageSegment | None:
+    if segment_type == "image":
+        return MessageSegment.text("[图片]")
+
     if segment_type in {"video", "record"}:
         return None
 

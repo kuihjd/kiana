@@ -163,8 +163,8 @@ async def test_archive_rebuilds_face_segment_for_forward_replay() -> None:
     assert build_forward_content(messages[0]) == Message([MessageSegment.face(123)])
 
 
-def test_build_forward_content_strips_face_raw_and_prefers_image_url() -> None:
-    """回放内容应移除危险字段，并优先使用可重发的 URL。"""
+def test_build_forward_content_strips_face_raw_and_replaces_image_with_placeholder() -> None:
+    """回放内容应移除危险字段，并将历史图片降级为占位文本。"""
     from src.plugins.chat_forward import build_forward_content
     from src.plugins.message_archive.db import ArchivedMessage
 
@@ -201,13 +201,11 @@ def test_build_forward_content_strips_face_raw_and_prefers_image_url() -> None:
     assert build_forward_content(face_message) == Message(
         [MessageSegment.face(344), MessageSegment.text("外面太疯狂了")]
     )
-    assert build_forward_content(image_message) == Message(
-        [MessageSegment.image("https://example.com/test.png")]
-    )
+    assert build_forward_content(image_message) == Message([MessageSegment.text("[图片]")])
 
 
-def test_build_forward_content_skips_video_but_keeps_image() -> None:
-    """视频应被跳过，图片仍然保留。"""
+def test_build_forward_content_skips_video_and_replaces_image_with_placeholder() -> None:
+    """视频应被跳过，图片应降级为占位文本。"""
     from src.plugins.chat_forward import build_forward_content
     from src.plugins.message_archive.db import ArchivedMessage
 
@@ -228,9 +226,7 @@ def test_build_forward_content_skips_video_but_keeps_image() -> None:
         plain_text="",
     )
 
-    assert build_forward_content(mixed_message) == Message(
-        [MessageSegment.image("https://example.com/test.png")]
-    )
+    assert build_forward_content(mixed_message) == Message([MessageSegment.text("[图片]")])
 
 
 @pytest.mark.asyncio
