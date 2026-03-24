@@ -226,7 +226,7 @@ def convert_seconds_to_time(seconds):
 def detect_simplified_chinese(synonyms):
     simplified_chinese_synonyms = []
     for synonym in synonyms:
-        lang, confidence = langid.classify(synonym)
+        lang, _confidence = langid.classify(synonym)
         if lang == "zh":
             simplified_chinese_synonyms.append(synonym)
     return simplified_chinese_synonyms

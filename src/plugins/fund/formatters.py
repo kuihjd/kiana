@@ -5,13 +5,14 @@ from typing import Any
 import pandas as pd
 from nonebot import logger
 
+from .data_fetcher import get_stock_name
+from .runtime import get_plugin_config_cached
+
 
 def _get_config_value(attr_name: str, default_value: Any) -> Any:
     """安全地获取配置值，如果 NoneBot 未初始化则使用默认值"""
-    from . import _get_plugin_config
-
     try:
-        config = _get_plugin_config()
+        config = get_plugin_config_cached()
         return getattr(config, attr_name, default_value)
     except ValueError:
         # NoneBot has not been initialized
@@ -199,8 +200,6 @@ async def format_stock_info(stock_code: str, stock_data: dict) -> str:
     Returns:
         格式化后的信息文本
     """
-    from .data_fetcher import get_stock_name
-
     try:
         hist_df = stock_data["hist_data"]
 

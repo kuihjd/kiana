@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from nonebot import get_plugin_config, logger
 
 from .config import Config
+from .exceptions import APIError, VideoDurationExceededError, VideoSizeExceededError
 
 config = get_plugin_config(Config)
 
@@ -179,8 +180,6 @@ async def get_video_info(bvid: str | None = None, avid: int | None = None) -> di
         APIError: 参数缺失或 API 返回错误
         VideoDurationExceededError: 视频时长超限
     """
-    from .exceptions import APIError, VideoDurationExceededError
-
     if not bvid and not avid:
         raise APIError("必须提供 bvid 或 avid 参数！")
 
@@ -220,8 +219,6 @@ async def get_video_stream(bvid: str | None = None, avid: int | None = None) -> 
         APIError: API 返回错误或缺失 cid
         VideoSizeExceededError: 视频大小超限
     """
-    from .exceptions import APIError, VideoSizeExceededError
-
     video_info = await get_video_info(bvid=bvid, avid=avid)
 
     cid = video_info.get("cid")

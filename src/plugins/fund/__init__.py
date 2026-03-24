@@ -2,17 +2,17 @@
 
 import re
 
-from nonebot import get_plugin_config, logger, on_regex
+from nonebot import logger, on_regex
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment
 from nonebot.exception import MatcherException
 from nonebot.plugin import PluginMetadata
 
 from ..forward_utils import create_forward_nodes, send_forward_message
 from ..group_permission import create_group_rule
-from .cache import FundDataCacheManager
 from .code_identifier import CodeType, identify_code_type
 from .config import Config
 from .queries import query_by_code_type
+from .runtime import get_plugin_config_cached
 
 __plugin_meta__ = PluginMetadata(
     name="fund",
@@ -28,39 +28,9 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-
-# 延迟加载插件配置（避免在模块导入时初始化）
-_cached_plugin_config: Config | None = None
-
-
-def _get_plugin_config() -> Config:
-    """获取插件配置，使用缓存避免重复获取"""
-    global _cached_plugin_config  # noqa: PLW0603
-    if _cached_plugin_config is None:
-        _cached_plugin_config = get_plugin_config(Config)
-    return _cached_plugin_config
-
-
-# 延迟初始化缓存管理器
-_cached_cache_manager: FundDataCacheManager | None = None
-
-
-def _get_cache_manager() -> FundDataCacheManager:
-    """获取缓存管理器实例"""
-    global _cached_cache_manager  # noqa: PLW0603
-    if _cached_cache_manager is None:
-        try:
-            config = _get_plugin_config()
-            max_size = getattr(config, "fund_max_cache_size", 100)
-        except ValueError:
-            max_size = 100
-        _cached_cache_manager = FundDataCacheManager(max_size=max_size)
-    return _cached_cache_manager
-
-
 # 创建群组规则检查函数
 fund_group_rule = create_group_rule(
-    config_getter=_get_plugin_config,
+    config_getter=get_plugin_config_cached,
     plugin_enabled_attr="fund_plugin_enabled",
     prefix="fund_",
 )

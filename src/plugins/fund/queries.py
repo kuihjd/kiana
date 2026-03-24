@@ -19,14 +19,13 @@ from .formatters import (
     format_index_info,
     format_stock_info,
 )
+from .runtime import get_plugin_config_cached
 
 
 def _get_config_value(attr_name: str, default_value: bool) -> bool:
     """安全地获取配置值，如果 NoneBot 未初始化则使用默认值"""
-    from . import _get_plugin_config
-
     try:
-        config = _get_plugin_config()
+        config = get_plugin_config_cached()
         return getattr(config, attr_name, default_value)
     except ValueError:
         # NoneBot has not been initialized

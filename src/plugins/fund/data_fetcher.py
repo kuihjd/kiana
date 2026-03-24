@@ -9,14 +9,19 @@ import pandas as pd
 from nonebot import logger
 
 from .cache import FundDataCacheManager
+from .market_rules import (
+    infer_stock_market,
+    is_shanghai_index,
+    is_shenzhen_index,
+    validate_market_code,
+)
+from .runtime import get_cache_manager, get_plugin_config_cached
 
 
 def _get_config_value(attr_name: str, default_value: Any) -> Any:
     """安全地获取配置值，如果 NoneBot 未初始化则使用默认值"""
-    from . import _get_plugin_config
-
     try:
-        config = _get_plugin_config()
+        config = get_plugin_config_cached()
         return getattr(config, attr_name, default_value)
     except ValueError:
         # NoneBot has not been initialized
@@ -25,9 +30,7 @@ def _get_config_value(attr_name: str, default_value: Any) -> Any:
 
 def _get_cache_manager() -> FundDataCacheManager:
     """获取缓存管理器实例"""
-    from . import _get_cache_manager as get_manager
-
-    return get_manager()
+    return get_cache_manager()
 
 
 # 默认配置常量
@@ -284,8 +287,6 @@ async def get_stock_data(stock_code: str) -> dict:
     Returns:
         包含股票历史数据的字典
     """
-    from .market_rules import infer_stock_market, validate_market_code
-
     try:
         # 处理股票代码格式
         if "." in stock_code:
@@ -343,7 +344,7 @@ async def get_stock_name(stock_code: str) -> str:
 
     try:
         # 提取纯代码部分
-        code = stock_code.split(".")[0] if "." in stock_code else stock_code
+        code = stock_code.split(".", maxsplit=1)[0] if "." in stock_code else stock_code
 
         # 验证代码格式（6位数字）
         if not code.isdigit() or len(code) != 6:
@@ -378,8 +379,6 @@ async def get_index_data(index_code: str) -> dict:
     Returns:
         包含指数历史数据的字典
     """
-    from .market_rules import is_shanghai_index, is_shenzhen_index
-
     try:
         # 处理指数代码格式
         if "." in index_code:
