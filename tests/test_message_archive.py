@@ -128,7 +128,9 @@ async def test_archive_preserves_cq_message_for_forward_replay() -> None:
         {
             "type": "node",
             "data": {
-                "id": 66,
+                "name": "测试用户",
+                "uin": "123456",
+                "content": Message("hello [CQ:at,qq=123456]"),
             },
         }
     ]
@@ -136,8 +138,8 @@ async def test_archive_preserves_cq_message_for_forward_replay() -> None:
 
 @pytest.mark.asyncio
 async def test_archive_rebuilds_face_segment_for_forward_replay() -> None:
-    """QQ 表情应通过原消息引用回放，避免自定义节点丢失类型。"""
-    from src.plugins.chat_forward import build_forward_nodes
+    """QQ 表情应从归档内容重建，不依赖原消息 ID。"""
+    from src.plugins.chat_forward import build_forward_content, build_forward_nodes
     from src.plugins.message_archive.db import archive_message_event, fetch_session_messages
 
     message = Message([MessageSegment.face(123)])
@@ -152,10 +154,83 @@ async def test_archive_rebuilds_face_segment_for_forward_replay() -> None:
         {
             "type": "node",
             "data": {
-                "id": 67,
+                "name": "测试用户",
+                "uin": "123456",
+                "content": Message([MessageSegment.face(123)]),
             },
         }
     ]
+    assert build_forward_content(messages[0]) == Message([MessageSegment.face(123)])
+
+
+def test_build_forward_content_strips_face_raw_and_prefers_image_url() -> None:
+    """回放内容应移除危险字段，并优先使用可重发的 URL。"""
+    from src.plugins.chat_forward import build_forward_content
+    from src.plugins.message_archive.db import ArchivedMessage
+
+    face_message = ArchivedMessage(
+        id=1,
+        session_type="group",
+        session_id="1",
+        message_id=1,
+        event_time=1,
+        self_id="1",
+        user_id="123456",
+        group_id="1",
+        sender_name="测试用户",
+        message_cq="[CQ:face,id=344,raw={'faceIndex':344}]外面太疯狂了",
+        plain_text="外面太疯狂了",
+    )
+    image_message = ArchivedMessage(
+        id=2,
+        session_type="group",
+        session_id="1",
+        message_id=2,
+        event_time=2,
+        self_id="1",
+        user_id="123456",
+        group_id="1",
+        sender_name="测试用户",
+        message_cq=(
+            "[CQ:image,summary=,file=87BB4460CDC33BCF4F6441D1AFF5BFC8.png,"
+            "sub_type=0,url=https://example.com/test.png,file_size=239885]"
+        ),
+        plain_text="",
+    )
+
+    assert build_forward_content(face_message) == Message(
+        [MessageSegment.face(344), MessageSegment.text("外面太疯狂了")]
+    )
+    assert build_forward_content(image_message) == Message(
+        [MessageSegment.image("https://example.com/test.png")]
+    )
+
+
+def test_build_forward_content_skips_video_but_keeps_image() -> None:
+    """视频应被跳过，图片仍然保留。"""
+    from src.plugins.chat_forward import build_forward_content
+    from src.plugins.message_archive.db import ArchivedMessage
+
+    mixed_message = ArchivedMessage(
+        id=3,
+        session_type="group",
+        session_id="1",
+        message_id=3,
+        event_time=3,
+        self_id="1",
+        user_id="123456",
+        group_id="1",
+        sender_name="测试用户",
+        message_cq=(
+            "[CQ:video,file=test.mp4,url=https://example.com/test.mp4]"
+            "[CQ:image,file=test.png,url=https://example.com/test.png]"
+        ),
+        plain_text="",
+    )
+
+    assert build_forward_content(mixed_message) == Message(
+        [MessageSegment.image("https://example.com/test.png")]
+    )
 
 
 @pytest.mark.asyncio

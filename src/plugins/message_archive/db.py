@@ -51,6 +51,10 @@ def ensure_schema() -> None:
             CREATE INDEX IF NOT EXISTS idx_message_archive_session_time
             ON message_archive (session_type, session_id, event_time, id)
             """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_message_archive_session_user_time
+            ON message_archive (session_type, session_id, user_id, event_time, id)
+            """,
         ]
     )
 
@@ -111,6 +115,7 @@ async def fetch_session_messages(
     session_id: str,
     limit: int,
     exclude_message_id: int | None = None,
+    target_user_id: str | None = None,
 ) -> list[ArchivedMessage]:
     """按会话获取最近归档消息，结果按时间升序返回。"""
     if limit < 1:
@@ -147,12 +152,21 @@ async def fetch_session_messages(
             WHERE session_type = ?
               AND session_id = ?
               AND (? IS NULL OR message_id <> ?)
+              AND (? IS NULL OR user_id = ?)
             ORDER BY event_time DESC, id DESC
             LIMIT ?
         )
         ORDER BY event_time ASC, id ASC
         """,
-        (session_type, session_id, exclude_message_id, exclude_message_id, limit),
+        (
+            session_type,
+            session_id,
+            exclude_message_id,
+            exclude_message_id,
+            target_user_id,
+            target_user_id,
+            limit,
+        ),
     )
 
     return [

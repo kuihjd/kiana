@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sqlite3
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -68,10 +69,21 @@ class SQLiteManager:
         return result
 
 
+def _resolve_db_path() -> Path:
+    env_db_path = os.getenv("KIANA_DB_PATH")
+    if env_db_path:
+        return Path(env_db_path).expanduser().resolve()
+
+    project_root = Path(__file__).resolve().parents[2]
+    return project_root / "data" / "kiana.sqlite3"
+
+
 def get_db() -> SQLiteManager:
     """Return the singleton SQLite manager instance."""
+    db_path = _resolve_db_path()
     if SQLiteManager._instance is None:
-        project_root = Path(__file__).resolve().parents[2]
-        db_path = project_root / "data" / "kiana.sqlite3"
+        SQLiteManager._instance = SQLiteManager(db_path)
+    elif SQLiteManager._instance.path != db_path:
+        SQLiteManager._instance._conn.close()
         SQLiteManager._instance = SQLiteManager(db_path)
     return SQLiteManager._instance

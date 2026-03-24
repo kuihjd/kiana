@@ -1,10 +1,20 @@
+import os
+import tempfile
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from nonebug import NONEBOT_INIT_KWARGS
 
+TEST_DB_PATH = Path(tempfile.gettempdir()) / "kiana-pytest.sqlite3"
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """配置 NoneBot 初始化参数"""
+    os.environ["KIANA_DB_PATH"] = str(TEST_DB_PATH)
+    for suffix in ("", "-shm", "-wal"):
+        Path(f"{TEST_DB_PATH}{suffix}").unlink(missing_ok=True)
+
     config.stash[NONEBOT_INIT_KWARGS] = {
         "driver": "~fastapi",
     }
