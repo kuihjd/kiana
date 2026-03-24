@@ -29,6 +29,7 @@ async def load_plugins(_nonebot_init: None):
     load_plugin("src.plugins.gold")
     load_plugin("src.plugins.message_archive")
     load_plugin("src.plugins.chat_forward")
+    load_plugin("src.plugins.a_share_sentiment")
 
     from src.plugins.message_archive.db import ensure_schema
 
@@ -49,6 +50,15 @@ def reset_chat_forward_cooldown() -> None:
     from src.plugins.chat_forward import cooldown_dict
 
     cooldown_dict.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_a_share_sentiment_state() -> None:
+    """每个用例前重置 A 股情绪插件状态。"""
+    from src.plugins.a_share_sentiment import cooldown_dict, result_cache
+
+    cooldown_dict.clear()
+    result_cache.clear()
 
 
 @pytest_asyncio.fixture(autouse=True)

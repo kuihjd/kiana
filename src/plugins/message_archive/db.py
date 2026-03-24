@@ -185,3 +185,62 @@ async def fetch_session_messages(
         )
         for row in rows
     ]
+
+
+async def fetch_group_messages_by_time_range(
+    group_id: str,
+    start_time: int,
+    end_time: int,
+    exclude_message_id: int | None = None,
+) -> list[ArchivedMessage]:
+    """按时间范围获取群聊归档消息，结果按时间升序返回。"""
+    if end_time <= start_time:
+        return []
+
+    rows = await db.fetch_all(
+        """
+        SELECT
+            id,
+            session_type,
+            session_id,
+            message_id,
+            event_time,
+            self_id,
+            user_id,
+            group_id,
+            sender_name,
+            message_cq,
+            plain_text
+        FROM message_archive
+        WHERE session_type = 'group'
+          AND session_id = ?
+          AND event_time >= ?
+          AND event_time < ?
+          AND (? IS NULL OR message_id <> ?)
+        ORDER BY event_time ASC, id ASC
+        """,
+        (
+            group_id,
+            start_time,
+            end_time,
+            exclude_message_id,
+            exclude_message_id,
+        ),
+    )
+
+    return [
+        ArchivedMessage(
+            id=row["id"],
+            session_type=row["session_type"],
+            session_id=row["session_id"],
+            message_id=row["message_id"],
+            event_time=row["event_time"],
+            self_id=row["self_id"],
+            user_id=row["user_id"],
+            group_id=row["group_id"],
+            sender_name=row["sender_name"],
+            message_cq=row["message_cq"],
+            plain_text=row["plain_text"],
+        )
+        for row in rows
+    ]
