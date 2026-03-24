@@ -66,6 +66,14 @@ def expect_bot_not_muted(ctx, group_id: int, self_id: int = 987654321) -> None:
     )
 
 
+def test_chat_forward_failure_messages_are_sanitized() -> None:
+    """内部异常提示不应直接暴露给用户。"""
+    from src.plugins.chat_forward import _get_send_failure_message, _get_storage_failure_message
+
+    assert _get_storage_failure_message() == "获取消息记录失败，请稍后重试"
+    assert _get_send_failure_message() == "发送合并转发失败，请稍后重试"
+
+
 @pytest.mark.asyncio
 async def test_chat_forward_group_replays_archived_messages(app: App) -> None:
     """群聊打包消息应从数据库读取并发送合并转发。"""

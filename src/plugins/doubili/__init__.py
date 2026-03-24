@@ -19,7 +19,13 @@ from ..forward_utils import create_forward_nodes, send_forward_message
 from ..group_permission import create_platform_rule
 from . import bilibili, douyin, xiaohongshu
 from .config import Config
-from .exceptions import DoubiliError
+from .exceptions import (
+    APIError,
+    DoubiliError,
+    ParseError,
+    VideoDurationExceededError,
+    VideoSizeExceededError,
+)
 
 __plugin_meta__ = PluginMetadata(
     name="doubili",
@@ -29,6 +35,18 @@ __plugin_meta__ = PluginMetadata(
 )
 
 config: Config = get_plugin_config(Config)
+
+
+def get_doubili_failure_message(platform: str, error: DoubiliError) -> str:
+    if isinstance(error, VideoSizeExceededError):
+        return f"视频大小超过 {error.max_size_mb:.1f}MB，无法发送"
+    if isinstance(error, VideoDurationExceededError):
+        return f"视频时长超过 {error.max_duration_sec / 60:.1f} 分钟，无法发送"
+    if isinstance(error, ParseError):
+        return f"{platform}内容解析失败，请稍后重试"
+    if isinstance(error, APIError):
+        return f"{platform}内容获取失败，请稍后重试"
+    return f"{platform}处理失败，请稍后重试"
 
 
 def _extract_card_data(event: MessageEvent) -> dict[str, Any] | None:
@@ -261,8 +279,7 @@ async def handle_bilibili_message(
     except DoubiliError as e:
         # 记录详细错误到日志
         logger.warning(f"Bilibili视频获取失败: {e}")
-        # 向用户发送详细错误信息
-        await bilibili_matcher.finish(str(e))
+        await bilibili_matcher.finish(get_doubili_failure_message("Bilibili", e))
     except MatcherException:
         raise
     except Exception as e:
@@ -353,8 +370,7 @@ async def handle_douyin_message(
     except DoubiliError as e:
         # 记录详细错误到日志
         logger.warning(f"抖音视频获取失败: {e}")
-        # 向用户发送详细错误信息
-        await douyin_matcher.finish(str(e))
+        await douyin_matcher.finish(get_doubili_failure_message("抖音", e))
     except MatcherException:
         raise
     except Exception as e:
@@ -549,8 +565,7 @@ async def handle_xiaohongshu_message(
     except DoubiliError as e:
         # 记录详细错误到日志
         logger.warning(f"小红书笔记获取失败: {e}")
-        # 向用户发送详细错误信息
-        await xiaohongshu_matcher.finish(str(e))
+        await xiaohongshu_matcher.finish(get_doubili_failure_message("小红书", e))
     except MatcherException:
         raise
     except Exception as e:

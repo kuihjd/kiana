@@ -68,6 +68,10 @@ gold_chart = on_regex(
 )
 
 
+def get_gold_chart_failure_message() -> str:
+    return "生成图表失败，请稍后重试"
+
+
 class CooldownManager:
     """冷却管理器"""
 
@@ -349,7 +353,7 @@ async def _(bot: Bot, event: Event, matches: tuple[str, str] = RegexGroup()):
         await gold_chart.send(MessageSegment.image(image_data))
     except Exception as e:
         logger.error(f"生成金价走势图失败: {e}", exc_info=True)
-        await gold_chart.send(f"生成图表失败: {e!s}")
+        await gold_chart.send(get_gold_chart_failure_message())
 
 
 @driver.on_startup

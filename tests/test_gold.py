@@ -71,3 +71,10 @@ async def test_fetch_gold_price_returns_number():
     assert price is not None, "金价获取失败"
     assert isinstance(price, float), f"金价应该是 float 类型，实际是: {type(price)}"
     assert price > 0, f"金价应该是正数，实际是: {price}"
+
+
+def test_gold_chart_failure_message_is_sanitized() -> None:
+    """图表生成失败时不应把底层异常直接发给用户。"""
+    from src.plugins.gold import get_gold_chart_failure_message
+
+    assert get_gold_chart_failure_message() == "生成图表失败，请稍后重试"

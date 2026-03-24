@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from nonebot import get_plugin_config, on_message
+from nonebot import get_plugin_config, logger, on_message
 from nonebot.adapters.onebot.v11 import (
     Bot,
     GroupMessageEvent,
@@ -238,6 +238,14 @@ def _validate_count_or_raise(count: int) -> None:
         raise ValueError("条数必须大于 0")
 
 
+def _get_storage_failure_message() -> str:
+    return "获取消息记录失败，请稍后重试"
+
+
+def _get_send_failure_message() -> str:
+    return "发送合并转发失败，请稍后重试"
+
+
 @chat_forward.handle()
 async def handle_chat_forward(bot: Bot, event: MessageEvent) -> None:
     request = await _parse_or_finish(event)
@@ -261,7 +269,8 @@ async def handle_chat_forward(bot: Bot, event: MessageEvent) -> None:
             target_user_id=request.target_user_id,
         )
     except Exception as e:
-        await chat_forward.finish(f"获取消息记录失败: {e}")
+        logger.error(f"获取消息记录失败: {e}", exc_info=True)
+        await chat_forward.finish(_get_storage_failure_message())
 
     if not messages:
         await chat_forward.finish("没有获取到消息记录")
@@ -273,4 +282,5 @@ async def handle_chat_forward(bot: Bot, event: MessageEvent) -> None:
     try:
         await send_forward_message(bot, event, forward_nodes)
     except Exception as e:
-        await chat_forward.finish(f"发送合并转发失败: {e}")
+        logger.error(f"发送合并转发失败: {e}", exc_info=True)
+        await chat_forward.finish(_get_send_failure_message())

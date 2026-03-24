@@ -23,6 +23,16 @@ __plugin_meta__ = PluginMetadata(
 config: Config = get_plugin_config(Config)
 
 
+def get_anime_trace_failure_message(error: Exception) -> str:
+    if isinstance(error, ImageDownloadError):
+        return "下载图片失败，请稍后重试"
+    if isinstance(error, APIRequestError):
+        return "搜番请求失败，请稍后重试"
+    if isinstance(error, APIResponseError):
+        return "搜番结果解析失败，请稍后重试"
+    return "处理图片失败，请稍后重试"
+
+
 def has_image() -> Rule:
     def _has_image(event: MessageEvent) -> bool:
         if event.reply:
@@ -70,7 +80,7 @@ async def handle_anime_trace(
             await bot.send(event, MessageSegment.video(result["video_url"]))
     except Exception as e:
         logger.error(f"处理图片时发生错误: {e}", exc_info=True)
-        await bot.send(event, f"处理图片时发生错误: {e!s}")
+        await bot.send(event, get_anime_trace_failure_message(e))
 
 
 async def process_image(image_url: str) -> dict:
