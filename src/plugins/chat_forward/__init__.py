@@ -1,17 +1,20 @@
 import time
+from typing import Any
 
 from nonebot import get_plugin_config, on_regex
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.params import RegexGroup
 from nonebot.plugin import PluginMetadata
 
+from ..forward_utils import send_forward_message
 from ..group_permission import create_sub_feature_rule
+from ..message_archive.db import ArchivedMessage, fetch_session_messages, get_session_context
 from .config import Config
 
 __plugin_meta__ = PluginMetadata(
     name="chat_forward",
-    description="打包群聊消息并合并转发",
-    usage="打包消息 [条数] - 打包最近n条消息（默认15条）\n打包记录 [条数] - 同上",
+    description="打包当前会话消息并合并转发",
+    usage="打包消息 [条数] - 打包当前会话最近n条消息（默认15条）\n打包记录 [条数] - 同上",
     config=Config,
 )
 
@@ -32,7 +35,7 @@ chat_forward = on_regex(
 )
 
 # 冷却字典
-cooldown_dict: dict[int, float] = {}
+cooldown_dict: dict[str, float] = {}
 
 
 def parse_count(reg_group: tuple) -> int:
@@ -43,42 +46,35 @@ def parse_count(reg_group: tuple) -> int:
     return int(count_str)
 
 
-def is_valid_message(msg: dict) -> bool:
-    """检查消息是否有效（排除撤回等无效消息）"""
-    content = msg.get("message")
-    # 消息内容为空
-    if not content:
-        return False
-    # 消息内容是空列表
-    return not (isinstance(content, list) and len(content) == 0)
+def get_cooldown_key(event: MessageEvent) -> str:
+    """获取会话级冷却 key。"""
+    session_type, session_id = get_session_context(event)
+    return f"{session_type}:{session_id}"
 
 
-def build_forward_nodes(messages: list, bot_id: str) -> list[dict]:
-    """构建合并转发节点"""
-    forward_nodes = []
-    for msg in messages:
-        if not is_valid_message(msg):
-            continue
-        sender = msg.get("sender", {})
-        node = {
+def build_forward_nodes(messages: list[ArchivedMessage]) -> list[dict[str, Any]]:
+    """构建合并转发节点。
+
+    优先直接引用原消息 ID，尽量保留 QQ 原生消息类型的渲染能力。
+    """
+    return [
+        {
             "type": "node",
             "data": {
-                "name": sender.get("nickname", "未知"),
-                "uin": str(sender.get("user_id", bot_id)),
-                "content": msg.get("message", ""),
+                "id": message.message_id,
             },
         }
-        forward_nodes.append(node)
-    return forward_nodes
+        for message in messages
+    ]
 
 
 @chat_forward.handle()
-async def handle_chat_forward(bot: Bot, event: GroupMessageEvent, reg_group: tuple = RegexGroup()):
-    group_id = event.group_id
+async def handle_chat_forward(bot: Bot, event: MessageEvent, reg_group: tuple = RegexGroup()) -> None:
+    cooldown_key = get_cooldown_key(event)
     current_time = time.time()
 
-    if group_id in cooldown_dict:
-        elapsed = current_time - cooldown_dict[group_id]
+    if cooldown_key in cooldown_dict:
+        elapsed = current_time - cooldown_dict[cooldown_key]
         if elapsed < config.chat_forward_cooldown:
             remaining = int(config.chat_forward_cooldown - elapsed)
             await chat_forward.finish(f"冷却中，请等待 {remaining} 秒")
@@ -90,35 +86,27 @@ async def handle_chat_forward(bot: Bot, event: GroupMessageEvent, reg_group: tup
         await chat_forward.finish("条数必须大于 0")
 
     # 更新冷却时间
-    cooldown_dict[group_id] = current_time
+    cooldown_dict[cooldown_key] = current_time
 
-    # 获取群消息历史（多取一条，因为要排除触发消息本身）
+    session_type, session_id = get_session_context(event)
     try:
-        history = await bot.call_api(
-            "get_group_msg_history",
-            group_id=group_id,
-            count=count + 1,
+        messages = await fetch_session_messages(
+            session_type=session_type,
+            session_id=session_id,
+            limit=count,
+            exclude_message_id=event.message_id,
         )
     except Exception as e:
         await chat_forward.finish(f"获取消息记录失败: {e}")
 
-    messages = history.get("messages", [])
     if not messages:
         await chat_forward.finish("没有获取到消息记录")
 
-    trigger_msg_id = event.message_id
-    messages = [msg for msg in messages if msg.get("message_id") != trigger_msg_id]
-    messages = messages[-count:]
-
-    if not messages:
+    forward_nodes = build_forward_nodes(messages)
+    if not forward_nodes:
         await chat_forward.finish("没有可打包的消息")
 
-    forward_nodes = build_forward_nodes(messages, bot.self_id)
     try:
-        await bot.call_api(
-            "send_group_forward_msg",
-            group_id=group_id,
-            messages=forward_nodes,
-        )
+        await send_forward_message(bot, event, forward_nodes)
     except Exception as e:
         await chat_forward.finish(f"发送合并转发失败: {e}")

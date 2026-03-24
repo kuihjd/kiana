@@ -17,6 +17,12 @@ async def load_plugins(_nonebot_init: None):
 
     load_plugin("src.plugins.fund")
     load_plugin("src.plugins.gold")
+    load_plugin("src.plugins.message_archive")
+    load_plugin("src.plugins.chat_forward")
+
+    from src.plugins.message_archive.db import ensure_schema
+
+    ensure_schema()
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +31,24 @@ def reset_global_mute_cache() -> None:
     from src import plugins as global_plugins
 
     global_plugins._mute_cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_chat_forward_cooldown() -> None:
+    """每个用例前重置打包消息冷却状态。"""
+    from src.plugins.chat_forward import cooldown_dict
+
+    cooldown_dict.clear()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_message_archive_table() -> None:
+    """每个用例前清空消息归档表。"""
+    from src.plugins.message_archive.db import ensure_schema
+    from src.storage import get_db
+
+    ensure_schema()
+    await get_db().execute("DELETE FROM message_archive")
 
 
 @pytest_asyncio.fixture

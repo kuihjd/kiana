@@ -3,9 +3,9 @@ import contextlib
 import json
 
 import websockets
-from websockets.exceptions import InvalidStatus, InvalidURI
 from nonebot import get_bot, get_driver, get_plugin_config, logger
 from nonebot.plugin import PluginMetadata
+from websockets.exceptions import InvalidStatus, InvalidURI
 
 from .config import Config
 

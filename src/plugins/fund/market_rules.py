@@ -170,7 +170,7 @@ def is_shenzhen_stock(code: str) -> bool:
 
 def is_beijing_stock(code: str) -> bool:
     """判断代码是否为北京股票
-    
+
     注意：北交所股票代码为6位数字
 
     Args:
