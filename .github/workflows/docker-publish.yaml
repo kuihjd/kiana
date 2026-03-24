@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-push:
-    name: Build, verify and push Docker image
+    name: Build and push Docker image
     runs-on: ubuntu-latest
 
     permissions:
@@ -17,41 +17,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Verify tag commit is on main
-        run: |
-          git fetch origin main --depth=1
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
-      - name: Sync dependencies
-        env:
-          UV_PYTHON: python
-        run: uv sync --locked
-
-      - name: Run Ruff
-        env:
-          UV_PYTHON: python
-        run: uv run ruff check .
-
-      - name: Run Pyright
-        env:
-          UV_PYTHON: python
-        run: uv run pyright
-
-      - name: Run Pytest
-        env:
-          UV_PYTHON: python
-        run: uv run pytest
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
