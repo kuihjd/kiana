@@ -2,8 +2,10 @@ import asyncio
 import contextlib
 import json
 
+import httpx
 import websockets
-from nonebot import get_bot, get_driver, get_plugin_config, logger
+from nonebot import get_bot, get_driver, get_plugin_config, logger, on_command
+from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
 from websockets.exceptions import InvalidStatus, InvalidURI
 
@@ -162,3 +164,53 @@ async def _stop_gotify() -> None:
             await task
         logger.info("[Gotify] 后台任务已停止")
     _state["ws_task"] = None
+
+
+gotify_list = on_command("gotify列表", permission=SUPERUSER)
+
+
+@gotify_list.handle()
+async def _list_applications() -> None:
+    if not config.gotify_url or not config.gotify_client_token:
+        await gotify_list.finish("[Gotify] 未配置 gotify_url 或 gotify_client_token")
+
+    url = f"{config.gotify_url.rstrip('/')}/application"
+    headers = {"X-Gotify-Key": config.gotify_client_token}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            apps: list[dict] = response.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in {401, 403}:
+            await gotify_list.finish("[Gotify] Token 无效或权限不足")
+        logger.error(f"[Gotify] 获取应用列表失败: {e}")
+        await gotify_list.finish(f"[Gotify] 请求失败，状态码: {e.response.status_code}")
+    except httpx.RequestError as e:
+        logger.error(f"[Gotify] 无法连接到 Gotify 服务器: {e}")
+        await gotify_list.finish("[Gotify] 无法连接到 Gotify 服务器，请检查地址和网络")
+    except json.JSONDecodeError as e:
+        logger.error(f"[Gotify] 解析应用列表响应失败: {e}")
+        await gotify_list.finish("[Gotify] 服务器返回的数据格式异常")
+
+    if not apps:
+        await gotify_list.finish("[Gotify] 没有应用")
+
+    lines = ["[Gotify 应用列表]"]
+    for app in apps:
+        app_id = app.get("id", "?")
+        name = app.get("name", "未命名")
+        description = app.get("description", "")
+        last_used = app.get("lastUsed")
+
+        lines.append(f"[{app_id}] {name}")
+        lines.append(f"    描述: {description or '(无)'}")
+
+        if last_used:
+            short = last_used[:16].replace("T", " ")
+            lines.append(f"    最后活跃: {short}")
+        else:
+            lines.append("    最后活跃: 从未活跃")
+
+    await gotify_list.finish("\n".join(lines))
