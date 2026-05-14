@@ -5,10 +5,12 @@ import json
 import httpx
 import websockets
 from nonebot import get_bot, get_driver, get_plugin_config, logger, on_command
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
 from websockets.exceptions import InvalidStatus, InvalidURI
 
+from ..forward_utils import create_forward_node
 from .config import Config
 
 __plugin_meta__ = PluginMetadata(
@@ -22,6 +24,8 @@ config: Config = get_plugin_config(Config)
 driver = get_driver()
 
 _state: dict[str, asyncio.Task | None] = {"ws_task": None}
+
+MAX_DIRECT_MSG_LENGTH = 300
 
 
 def _build_ws_url() -> str:
@@ -42,14 +46,7 @@ def _format_message(data: dict) -> str:
     return message
 
 
-async def _send_to_targets(text: str, users: list[str], groups: list[str]) -> None:
-    """发送消息到指定的用户和群聊"""
-    try:
-        bot = get_bot()
-    except ValueError:
-        logger.warning("[Gotify] 没有可用的 Bot 实例，跳过转发")
-        return
-
+async def _send_direct(bot: Bot, text: str, users: list[str], groups: list[str]) -> None:
     for user_id in users:
         try:
             await bot.send_private_msg(user_id=int(user_id), message=text)
@@ -61,6 +58,37 @@ async def _send_to_targets(text: str, users: list[str], groups: list[str]) -> No
             await bot.send_group_msg(group_id=int(group_id), message=text)
         except Exception as e:
             logger.error(f"[Gotify] 转发到群 {group_id} 失败: {e}")
+
+
+async def _send_forward(bot: Bot, text: str, users: list[str], groups: list[str]) -> None:
+    forward_nodes = [create_forward_node(bot, text)]
+
+    for user_id in users:
+        try:
+            await bot.call_api("send_private_forward_msg", user_id=int(user_id), messages=forward_nodes)
+        except Exception as e:
+            logger.error(f"[Gotify] 合并转发到用户 {user_id} 失败: {e}")
+
+    for group_id in groups:
+        try:
+            await bot.call_api("send_group_forward_msg", group_id=int(group_id), messages=forward_nodes)
+        except Exception as e:
+            logger.error(f"[Gotify] 合并转发到群 {group_id} 失败: {e}")
+
+
+async def _send_to_targets(text: str, users: list[str], groups: list[str]) -> None:
+    try:
+        bot = get_bot()
+    except ValueError:
+        logger.warning("[Gotify] 没有可用的 Bot 实例，跳过转发")
+        return
+
+    assert isinstance(bot, Bot)
+
+    if len(text) <= MAX_DIRECT_MSG_LENGTH:
+        await _send_direct(bot, text, users, groups)
+    else:
+        await _send_forward(bot, text, users, groups)
 
 
 async def _forward_message(data: dict) -> None:
