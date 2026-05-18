@@ -8,6 +8,8 @@ from nonebot.adapters.onebot.v11 import (
     MessageSegment,
 )
 
+from src.plugins.forward_utils import send_forward_message
+
 from .cache import get_cached_collection_map, get_cached_nickname_map
 from .config import Config
 from .db import (
@@ -154,6 +156,21 @@ def _resolve_at_target(
 # ============== Handlers ==============
 
 
+async def _send_nickname_list(
+    bot: Bot, event: GroupMessageEvent, nicknames: list[str], prefix: str, forward_title: str
+) -> None:
+    """发送昵称列表，过多时使用合并转发避免刷屏"""
+    text = ", ".join(nicknames)
+    if len(text) > 200:
+        node = {
+            "type": "node",
+            "data": {"name": forward_title, "uin": bot.self_id, "content": text},
+        }
+        await send_forward_message(bot, event, [node])
+    else:
+        await add_nickname_matcher.finish(f"{prefix}{text}")
+
+
 @add_nickname_matcher.handle()
 async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
     msg = event.message
@@ -165,7 +182,7 @@ async def handle_add_nickname(bot: Bot, event: GroupMessageEvent) -> None:
     if not nickname:
         existing = await fetch_user_nicknames(str(event.group_id), at_qq)
         if existing:
-            await add_nickname_matcher.finish("该用户的昵称:" + ", ".join(existing))
+            await _send_nickname_list(bot, event, existing, "该用户的昵称:", "昵称列表")
         else:
             await add_nickname_matcher.finish("该用户没有任何昵称")
         return
@@ -297,7 +314,7 @@ async def handle_clear_nickname(bot: Bot, event: GroupMessageEvent) -> None:
         await clear_nickname_matcher.finish("该用户没有任何昵称")
         return
 
-    await clear_nickname_matcher.finish(f"已清空该用户的所有昵称：{', '.join(cleared_nicknames)}")
+    await _send_nickname_list(bot, event, cleared_nicknames, "已清空该用户的所有昵称：", "清空昵称")
 
 
 @group_decrease_matcher.handle()
