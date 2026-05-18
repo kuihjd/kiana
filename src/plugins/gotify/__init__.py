@@ -65,13 +65,17 @@ async def _send_forward(bot: Bot, text: str, users: list[str], groups: list[str]
 
     for user_id in users:
         try:
-            await bot.call_api("send_private_forward_msg", user_id=int(user_id), messages=forward_nodes)
+            await bot.call_api(
+                "send_private_forward_msg", user_id=int(user_id), messages=forward_nodes
+            )
         except Exception as e:
             logger.error(f"[Gotify] 合并转发到用户 {user_id} 失败: {e}")
 
     for group_id in groups:
         try:
-            await bot.call_api("send_group_forward_msg", group_id=int(group_id), messages=forward_nodes)
+            await bot.call_api(
+                "send_group_forward_msg", group_id=int(group_id), messages=forward_nodes
+            )
         except Exception as e:
             logger.error(f"[Gotify] 合并转发到群 {group_id} 失败: {e}")
 

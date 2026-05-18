@@ -239,7 +239,6 @@ async def fetch_gold_price() -> float | None:
     return await asyncio.to_thread(_fetch_gold_price_sync)
 
 
-
 @scheduler.scheduled_job("interval", seconds=config.price_fetch_interval)
 async def record_price():
     """定时记录金价"""

@@ -271,9 +271,7 @@ async def handle_bilibili_message(
             video_data = await bilibili.get_video_stream(avid=int(video_id))
 
         # 2. 下载并发送视频
-        video_bytes = await download_media(
-            video_data["url"], headers=video_data["headers"]
-        )
+        video_bytes = await download_media(video_data["url"], headers=video_data["headers"])
         await bilibili_matcher.send(MessageSegment.video(video_bytes))
 
     except DoubiliError as e:
@@ -346,9 +344,7 @@ async def handle_douyin_message(
         await douyin_matcher.send(f"{video_info['title']}")
 
         # 3. 下载视频
-        video_data = await download_media(
-            video_info["url"], headers=video_info["headers"]
-        )
+        video_data = await download_media(video_info["url"], headers=video_info["headers"])
 
         # 4. 发送视频（超时处理）
         try:

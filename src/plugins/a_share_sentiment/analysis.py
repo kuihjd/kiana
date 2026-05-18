@@ -161,8 +161,14 @@ def select_sample_messages(
     max_messages: int,
     char_budget: int,
 ) -> list[str]:
-    prioritized = [message for message in messages if message.matched_keywords or message.matched_codes]
-    regular = [message for message in messages if not message.matched_keywords and not message.matched_codes]
+    prioritized = [
+        message for message in messages if message.matched_keywords or message.matched_codes
+    ]
+    regular = [
+        message
+        for message in messages
+        if not message.matched_keywords and not message.matched_codes
+    ]
 
     selected_lines: list[str] = []
     used_chars = 0

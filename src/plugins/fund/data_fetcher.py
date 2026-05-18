@@ -167,9 +167,7 @@ async def get_fund_data(fund_code: str) -> dict:
     """获取基金数据,包括基本信息、业绩和净值信息"""
     try:
         # 获取基金基本信息
-        basic_info_df = await asyncio.to_thread(
-            ak.fund_individual_basic_info_xq, symbol=fund_code
-        )
+        basic_info_df = await asyncio.to_thread(ak.fund_individual_basic_info_xq, symbol=fund_code)
 
         if basic_info_df.empty or len(basic_info_df) == 0:
             logger.debug(f"未找到场外基金 {fund_code} 的基本信息")

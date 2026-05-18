@@ -69,7 +69,9 @@ def prune_expired_cache() -> None:
     ttl_seconds = config.a_share_sentiment_cache_ttl_minutes * 60
     now = time.time()
     expired_keys = [
-        key for key, cached_result in result_cache.items() if now - cached_result.created_at >= ttl_seconds
+        key
+        for key, cached_result in result_cache.items()
+        if now - cached_result.created_at >= ttl_seconds
     ]
     for key in expired_keys:
         del result_cache[key]
@@ -129,7 +131,9 @@ async def fetch_analysis_context(event: GroupMessageEvent) -> tuple[DayAnalysis,
     )
 
     history_analyses: list[DayAnalysis] = []
-    for history_window in get_history_day_windows(event.time, config.a_share_sentiment_history_days):
+    for history_window in get_history_day_windows(
+        event.time, config.a_share_sentiment_history_days
+    ):
         history_messages = await fetch_group_messages_by_time_range(
             group_id=str(event.group_id),
             start_time=history_window.start_time,

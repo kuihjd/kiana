@@ -47,6 +47,10 @@ async def send_forward_message(
         forward_nodes: 转发消息节点列表
     """
     if isinstance(event, GroupMessageEvent):
-        await bot.call_api("send_group_forward_msg", group_id=event.group_id, messages=forward_nodes)
+        await bot.call_api(
+            "send_group_forward_msg", group_id=event.group_id, messages=forward_nodes
+        )
     else:
-        await bot.call_api("send_private_forward_msg", user_id=event.user_id, messages=forward_nodes)
+        await bot.call_api(
+            "send_private_forward_msg", user_id=event.user_id, messages=forward_nodes
+        )

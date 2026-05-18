@@ -41,8 +41,7 @@ def _check_cached_mute_status(group_id: int, current_time: float) -> bool:
     if is_muted and mute_end_timestamp > current_time:
         remaining_minutes = int((mute_end_timestamp - current_time) // 60)
         logger.debug(
-            f"[缓存] 机器人在群 {group_id} 中被禁言，"
-            f"剩余 {remaining_minutes} 分钟，跳过消息处理"
+            f"[缓存] 机器人在群 {group_id} 中被禁言，剩余 {remaining_minutes} 分钟，跳过消息处理"
         )
         raise IgnoredException("Bot is muted in this group (cached)")
 
@@ -66,7 +65,9 @@ async def _refresh_mute_status(bot: Bot, group_id: int, current_time: float) -> 
 
     remaining_seconds = shut_up_timestamp - current_time
     remaining_minutes = int(remaining_seconds // 60)
-    logger.warning(f"检测到机器人在群 {group_id} 中被禁言，剩余 {remaining_minutes} 分钟，跳过消息处理")
+    logger.warning(
+        f"检测到机器人在群 {group_id} 中被禁言，剩余 {remaining_minutes} 分钟，跳过消息处理"
+    )
     raise IgnoredException("Bot is muted in this group")
 
 
