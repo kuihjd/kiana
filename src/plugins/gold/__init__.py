@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import httpx
-import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from nonebot import get_driver, get_plugin_config, logger, on_fullmatch, on_regex, require
 from nonebot.adapters.onebot.v11 import (
@@ -260,8 +259,34 @@ async def record_price():
     await persist_price(current_time, price)
 
 
+def _cluster_segments(
+    data: list[tuple[float, float]], gap_threshold: int = 1800
+) -> list[list[tuple[float, float]]]:
+    """将 (timestamp, price) 数据按时间间隔聚类为交易时段。
+
+    Args:
+        data: 按时间升序排列的 (timestamp, price) 列表。
+        gap_threshold: 间隔阈值（秒），超过此值认为是不同交易时段。默认 1800 (30 分钟)。
+
+    Returns:
+        交易时段列表，每个时段为一个点列表。
+    """
+    segments: list[list[tuple[float, float]]] = []
+    if not data:
+        return segments
+
+    current: list[tuple[float, float]] = [data[0]]
+    for i in range(1, len(data)):
+        if data[i][0] - data[i-1][0] > gap_threshold:
+            segments.append(current)
+            current = []
+        current.append(data[i])
+    segments.append(current)
+    return segments
+
+
 def generate_chart(window_seconds: int | None = None) -> bytes:
-    """生成金价走势图"""
+    """生成金价走势图（压缩非连续时间轴）"""
     fig = None
     try:
         plt.style.use("bmh")
@@ -277,17 +302,40 @@ def generate_chart(window_seconds: int | None = None) -> bytes:
         if len(window_data) < 2:
             window_data = list(price_history)
 
-        times, prices = zip(*window_data, strict=False)
-        # 先转本地时间，再转 Matplotlib 可绘制的日期数值
-        times_dt = [datetime.fromtimestamp(t).astimezone() for t in times]
-        times_num = [mdates.date2num(dt) for dt in times_dt]
+        # 按交易时段聚类
+        segments = _cluster_segments(window_data, gap_threshold=1800)
 
-        plt.plot(times_num, prices)
+        # 展平为连续 x 轴
+        xs: list[int] = []
+        ys: list[float] = []
+        tick_positions: list[int] = []
+        tick_labels: list[str] = []
+        x = 0
+        for seg in segments:
+            seg_xs = list(range(x, x + len(seg)))
+            seg_ys = [p for _, p in seg]
+            xs.extend(seg_xs)
+            ys.extend(seg_ys)
+
+            # 记录 segment 起始时间标签
+            dt = datetime.fromtimestamp(seg[0][0]).astimezone()
+            tick_positions.append(seg_xs[0])
+            tick_labels.append(dt.strftime("%m/%d %H:%M"))
+
+            x += len(seg)
+
+        # 记录最后一个 segment 的结束标签
+        if segments:
+            last_seg = segments[-1]
+            dt = datetime.fromtimestamp(last_seg[-1][0]).astimezone()
+            tick_positions.append(x - 1)
+            tick_labels.append(dt.strftime("%m/%d %H:%M"))
+
+        plt.plot(xs, ys)
         axis = plt.gca()
-        axis.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+        axis.set_xticks(tick_positions)
+        axis.set_xticklabels(tick_labels, rotation=30, ha="right")
         plt.grid(True)
-
-        fig.autofmt_xdate()
 
         buf = io.BytesIO()
         plt.savefig(buf, format="PNG")
