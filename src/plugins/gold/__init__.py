@@ -285,8 +285,48 @@ def _cluster_segments(
     return segments
 
 
+def _select_chart_ticks(
+    xs: list[int],
+    segments: list[list[tuple[float, float]]],
+    window_seconds: int,
+    max_ticks: int = 8,
+) -> tuple[list[int], list[str]]:
+    if not xs or max_ticks <= 0:
+        return [], []
+
+    flat_times = [t for seg in segments for t, _ in seg]
+    if not flat_times:
+        return [], []
+
+    tick_count = min(max_ticks, len(xs))
+    if tick_count == 1:
+        tick_indices = [0]
+    else:
+        tick_indices = [
+            round(i * (len(xs) - 1) / (tick_count - 1))
+            for i in range(tick_count)
+        ]
+
+    # round 在少量数据时可能产生重复下标，保序去重。
+    tick_indices = list(dict.fromkeys(tick_indices))
+
+    tick_positions = [xs[i] for i in tick_indices]
+    if window_seconds < 24 * 3600:
+        label_format = "%H:%M"
+    elif window_seconds < 7 * 86400:
+        label_format = "%m/%d %H:%M"
+    else:
+        label_format = "%m/%d"
+
+    tick_labels = [
+        datetime.fromtimestamp(flat_times[i]).astimezone().strftime(label_format)
+        for i in tick_indices
+    ]
+    return tick_positions, tick_labels
+
+
 def generate_chart(window_seconds: int | None = None) -> bytes:
-    """生成金价走势图（压缩非连续时间轴）"""
+    """生成金价走势图"""
     fig = None
     try:
         plt.style.use("bmh")
@@ -308,8 +348,6 @@ def generate_chart(window_seconds: int | None = None) -> bytes:
         # 展平为连续 x 轴
         xs: list[int] = []
         ys: list[float] = []
-        tick_positions: list[int] = []
-        tick_labels: list[str] = []
         x = 0
         for seg in segments:
             seg_xs = list(range(x, x + len(seg)))
@@ -317,25 +355,15 @@ def generate_chart(window_seconds: int | None = None) -> bytes:
             xs.extend(seg_xs)
             ys.extend(seg_ys)
 
-            # 记录 segment 起始时间标签
-            dt = datetime.fromtimestamp(seg[0][0]).astimezone()
-            tick_positions.append(seg_xs[0])
-            tick_labels.append(dt.strftime("%m/%d %H:%M"))
-
             x += len(seg)
-
-        # 记录最后一个 segment 的结束标签
-        if segments:
-            last_seg = segments[-1]
-            dt = datetime.fromtimestamp(last_seg[-1][0]).astimezone()
-            tick_positions.append(x - 1)
-            tick_labels.append(dt.strftime("%m/%d %H:%M"))
 
         plt.plot(xs, ys)
         axis = plt.gca()
+        tick_positions, tick_labels = _select_chart_ticks(xs, segments, effective_window)
         axis.set_xticks(tick_positions)
         axis.set_xticklabels(tick_labels, rotation=30, ha="right")
-        plt.grid(True)
+        axis.grid(False, axis="x")
+        axis.grid(True, axis="y")
 
         buf = io.BytesIO()
         plt.savefig(buf, format="PNG")
