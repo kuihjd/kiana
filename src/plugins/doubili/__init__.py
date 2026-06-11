@@ -19,6 +19,7 @@ from ..forward_utils import create_forward_nodes, send_forward_message
 from ..group_permission import create_platform_rule
 from . import bilibili, douyin, xiaohongshu
 from .config import Config
+from .douyin import IOS_HEADER
 from .exceptions import (
     APIError,
     DoubiliError,
@@ -321,6 +322,46 @@ douyin_matcher = on_message(
 )
 
 
+async def _send_douyin_images(bot: Bot, event: MessageEvent, pic_urls: list[str]) -> None:
+    """发送抖音图文内容（合并转发）"""
+    image_segments = await download_images_concurrent(pic_urls, max_concurrent=5)
+
+    if not image_segments:
+        await douyin_matcher.finish("图片下载失败")
+        return
+
+    contents: list[str | MessageSegment] = []
+    contents.extend(image_segments)
+    forward_nodes = create_forward_nodes(bot, contents)
+    try:
+        await send_forward_message(bot, event, forward_nodes)
+    except MatcherException:
+        raise
+    except Exception as e:
+        error_str = str(e)
+        if "timeout" in error_str.lower() or "NetWorkError" in error_str:
+            logger.warning(f"发送图片超时，但可能已发送: {e}")
+        else:
+            logger.error(f"发送图片失败: {e}", exc_info=True)
+            await douyin_matcher.finish("图片发送失败")
+
+
+async def _send_douyin_video(video_url: str) -> None:
+    """发送抖音视频"""
+    video_data = await download_media(video_url, headers=IOS_HEADER)
+    try:
+        await douyin_matcher.finish(MessageSegment.video(video_data))
+    except MatcherException:
+        raise
+    except Exception as e:
+        error_str = str(e)
+        if "timeout" in error_str.lower() or "NetWorkError" in error_str:
+            logger.warning(f"发送视频超时，但可能已发送: {e}")
+        else:
+            logger.error(f"发送视频失败: {e}", exc_info=True)
+            await douyin_matcher.finish("视频发送失败")
+
+
 @douyin_matcher.handle()
 async def handle_douyin_message(
     bot: Bot,
@@ -328,51 +369,35 @@ async def handle_douyin_message(
 ):
     """处理抖音消息"""
     message = str(event.message).strip()
-    video_id = await douyin.extract_video_id(message)
+    content_type, video_id = await douyin.extract_video_info(message)
 
     if not video_id:
         _log_matcher_event("Douyin", event, success=False, message="未提取到视频ID")
         await douyin_matcher.finish("未找到有效的视频链接")
 
-    _log_matcher_event("Douyin", event, video_id)
+    _log_matcher_event("Douyin", event, video_id, id_type=content_type)
 
     try:
-        # 1. 获取视频信息
-        video_info = await douyin.get_video_info(video_id)
+        result = await douyin.get_video_info(content_type, video_id)
+        await douyin_matcher.send(f"{result.title}")
 
-        # 2. 发送标题
-        await douyin_matcher.send(f"{video_info['title']}")
-
-        # 3. 下载视频
-        video_data = await download_media(video_info["url"], headers=video_info["headers"])
-
-        # 4. 发送视频（超时处理）
-        try:
-            await douyin_matcher.finish(MessageSegment.video(video_data))
-        except MatcherException:
-            raise
-        except Exception as send_error:
-            error_str = str(send_error)
-            if "timeout" in error_str.lower() or "NetWorkError" in error_str:
-                # 超时可能已发送成功，只记录日志
-                logger.warning(f"发送视频超时，但可能已发送: {send_error}")
-            else:
-                # 其他发送错误记录详细日志
-                logger.error(f"发送视频失败: {send_error}", exc_info=True)
-                # 友好提示用户
-                await douyin_matcher.finish("视频发送失败")
+        if result.pic_urls:
+            await _send_douyin_images(bot, event, result.pic_urls)
             return
 
+        if result.video_url:
+            await _send_douyin_video(result.video_url)
+            return
+
+        await douyin_matcher.finish("未找到可下载的内容")
+
     except DoubiliError as e:
-        # 记录详细错误到日志
         logger.warning(f"抖音视频获取失败: {e}")
         await douyin_matcher.finish(get_doubili_failure_message("抖音", e))
     except MatcherException:
         raise
     except Exception as e:
-        # 记录详细错误到日志（包含堆栈）
         logger.error(f"处理抖音视频失败: {e}", exc_info=True)
-        # 向用户发送友好提示
         await douyin_matcher.finish("视频处理失败，请稍后重试")
 
 

@@ -87,6 +87,17 @@ class DouyinParser:
 
         data: dict[str, Any] = self._format_response(text)
 
+        # 检查是否为图文内容
+        images = data.get("images")
+        if images:
+            pic_urls = [img["url_list"][0] for img in images if img.get("url_list")]
+            return ParseResult(
+                title=data["desc"],
+                cover_url=data["video"]["cover"]["url_list"][0] if data.get("video", {}).get("cover", {}).get("url_list") else "",
+                pic_urls=pic_urls,
+                author=data["author"]["nickname"],
+            )
+
         # 获取视频播放地址
         video_url: str = data["video"]["play_addr"]["url_list"][0].replace("playwm", "play")
         if video_url:
@@ -185,8 +196,12 @@ async def get_redirect_url(url: str) -> str:
         return str(response.url)
 
 
-async def extract_video_id(text: str) -> str:
-    """从文本中提取视频ID"""
+async def extract_video_info(text: str) -> tuple[str, str]:
+    """从文本中提取内容类型和ID
+
+    Returns:
+        (content_type, video_id) 元组，content_type 为 "video" 或 "note"，未找到返回 ("", "")
+    """
     if matched := PATTERNS["douyin"].search(text):
         share_url = matched[0]
 
@@ -194,36 +209,37 @@ async def extract_video_id(text: str) -> str:
         if "v.douyin.com" in share_url:
             share_url = await get_redirect_url(share_url)
 
-        # 从URL中提取视频ID
-        if video_match := re.search(r"video/(\d+)", share_url):
-            return video_match[1]
+        # 从URL中提取内容类型和ID
+        if content_match := re.search(r"(video|note)/(\d+)", share_url):
+            return (content_match[1], content_match[2])
 
-    return ""
+    return ("", "")
 
 
 # 创建解析器实例
 douyin_parser = DouyinParser()
 
 
-async def get_video_info(video_id: str) -> dict:
+async def get_video_info(content_type: str, video_id: str) -> ParseResult:
     """获取抖音视频信息
 
     Args:
+        content_type: 内容类型 ("video" 或 "note")
         video_id: 视频 ID
 
     Returns:
-        包含 url, headers, title 的字典
+        ParseResult 包含视频或图文信息
 
     Raises:
         VideoFetchError: 获取视频信息失败
     """
-    logger.info(f"尝试获取抖音视频信息: {video_id}")
+    logger.info(f"尝试获取抖音视频信息: {content_type}/{video_id}")
     try:
-        share_url = f"https://www.douyin.com/video/{video_id}"
+        share_url = f"https://www.douyin.com/{content_type}/{video_id}"
         video_info = await douyin_parser.parse_share_url(share_url)
-        logger.info(f"获取到视频信息: {video_info.video_url}")
+        logger.info(f"获取到视频信息: video_url={video_info.video_url}, pic_urls={video_info.pic_urls}")
 
-        return {"url": video_info.video_url, "headers": IOS_HEADER, "title": video_info.title}
+        return video_info
     except VideoFetchError:
         raise
     except Exception as e:

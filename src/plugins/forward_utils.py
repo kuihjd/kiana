@@ -2,7 +2,13 @@
 
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    Message,
+    MessageEvent,
+    MessageSegment,
+)
 
 
 def create_forward_node(bot: Bot, content: str | MessageSegment) -> dict[str, Any]:
@@ -15,7 +21,8 @@ def create_forward_node(bot: Bot, content: str | MessageSegment) -> dict[str, An
     Returns:
         转发消息节点字典
     """
-    return {"type": "node", "data": {"name": "", "uin": bot.self_id, "content": content}}
+    msg = Message(content)
+    return {"type": "node", "data": {"name": "", "uin": bot.self_id, "content": msg}}
 
 
 def create_forward_nodes(

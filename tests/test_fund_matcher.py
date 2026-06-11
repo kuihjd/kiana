@@ -162,7 +162,7 @@ async def test_fund_query_handler_with_mocked_data(app: App):
                     "messages": [
                         {
                             "type": "node",
-                            "data": {"name": "", "uin": "987654321", "content": expected_info_text},
+                            "data": {"name": "", "uin": "987654321", "content": Message(expected_info_text)},
                         }
                     ],
                 },
@@ -237,7 +237,7 @@ async def test_fund_query_handler_with_private_message(app: App):
                     "messages": [
                         {
                             "type": "node",
-                            "data": {"name": "", "uin": "987654321", "content": expected_info_text},
+                            "data": {"name": "", "uin": "987654321", "content": Message(expected_info_text)},
                         }
                     ],
                 },
@@ -279,7 +279,7 @@ async def test_fund_query_multiple_codes(app: App):
                                 "data": {
                                     "name": "",
                                     "uin": "987654321",
-                                    "content": f"{expected_type}信息",
+                                    "content": Message(f"{expected_type}信息"),
                                 },
                             }
                         ],
