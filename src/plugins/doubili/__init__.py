@@ -323,12 +323,8 @@ douyin_matcher = on_message(
 
 
 async def _send_douyin_images(bot: Bot, event: MessageEvent, pic_urls: list[str]) -> None:
-    """发送抖音图文内容（合并转发）"""
-    image_segments = await download_images_concurrent(pic_urls, max_concurrent=5)
-
-    if not image_segments:
-        await douyin_matcher.finish("图片下载失败")
-        return
+    """发送抖音图文内容"""
+    image_segments = [MessageSegment.image(url) for url in pic_urls]
 
     contents: list[str | MessageSegment] = []
     contents.extend(image_segments)

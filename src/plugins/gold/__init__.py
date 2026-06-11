@@ -277,7 +277,7 @@ def _cluster_segments(
 
     current: list[tuple[float, float]] = [data[0]]
     for i in range(1, len(data)):
-        if data[i][0] - data[i-1][0] > gap_threshold:
+        if data[i][0] - data[i - 1][0] > gap_threshold:
             segments.append(current)
             current = []
         current.append(data[i])
@@ -302,10 +302,7 @@ def _select_chart_ticks(
     if tick_count == 1:
         tick_indices = [0]
     else:
-        tick_indices = [
-            round(i * (len(xs) - 1) / (tick_count - 1))
-            for i in range(tick_count)
-        ]
+        tick_indices = [round(i * (len(xs) - 1) / (tick_count - 1)) for i in range(tick_count)]
 
     # round 在少量数据时可能产生重复下标，保序去重。
     tick_indices = list(dict.fromkeys(tick_indices))

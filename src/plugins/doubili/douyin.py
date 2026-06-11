@@ -93,7 +93,9 @@ class DouyinParser:
             pic_urls = [img["url_list"][0] for img in images if img.get("url_list")]
             return ParseResult(
                 title=data["desc"],
-                cover_url=data["video"]["cover"]["url_list"][0] if data.get("video", {}).get("cover", {}).get("url_list") else "",
+                cover_url=data["video"]["cover"]["url_list"][0]
+                if data.get("video", {}).get("cover", {}).get("url_list")
+                else "",
                 pic_urls=pic_urls,
                 author=data["author"]["nickname"],
             )
@@ -237,7 +239,9 @@ async def get_video_info(content_type: str, video_id: str) -> ParseResult:
     try:
         share_url = f"https://www.douyin.com/{content_type}/{video_id}"
         video_info = await douyin_parser.parse_share_url(share_url)
-        logger.info(f"获取到视频信息: video_url={video_info.video_url}, pic_urls={video_info.pic_urls}")
+        logger.info(
+            f"获取到视频信息: video_url={video_info.video_url}, pic_urls={video_info.pic_urls}"
+        )
 
         return video_info
     except VideoFetchError:
