@@ -17,6 +17,7 @@ from nonebot.rule import Rule
 from ..forward_utils import send_forward_message
 from ..group_permission import create_sub_feature_rule
 from ..message_archive.db import ArchivedMessage, fetch_session_messages, get_session_context
+from ..message_archive.image_store import extract_file_hash, get_image_path
 from .config import Config
 
 __plugin_meta__ = PluginMetadata(
@@ -124,18 +125,18 @@ def _build_face_segment(segment: MessageSegment) -> MessageSegment | None:
         return None
 
 
-def _build_media_segment(segment_type: str, segment: MessageSegment) -> MessageSegment | None:
-    if segment_type == "image":
+async def _build_image_segment(segment: MessageSegment) -> MessageSegment | None:
+    """从本地读取图片 bytes 构造图片段；未命中则降级 [图片]。"""
+    file_field = str(segment.data.get("file", ""))
+    file_hash = extract_file_hash(file_field)
+    path = get_image_path(file_hash) if file_hash else None
+    if path is None:
         return MessageSegment.text("[图片]")
-
-    if segment_type in {"video", "record"}:
-        return None
-
-    file_source = segment.data.get("url") or segment.data.get("file")
-    if file_source is None:
-        return None
-
-    return MessageSegment.image(file_source)
+    try:
+        return MessageSegment.image(path.read_bytes())
+    except OSError as e:
+        logger.warning(f"读取本地图片失败 {path}: {e}")
+        return MessageSegment.text("[图片]")
 
 
 def _build_data_segment(segment_type: str, segment: MessageSegment) -> MessageSegment | None:
@@ -148,7 +149,14 @@ def _build_data_segment(segment_type: str, segment: MessageSegment) -> MessageSe
     return MessageSegment.xml(data)
 
 
-def _sanitize_archived_segment(segment: MessageSegment) -> Message | MessageSegment | None:
+def _sanitize_unreplayable_media(segment_type: str) -> MessageSegment | None:
+    """处理无法稳定回放的媒体段：视频/语音丢弃，合并转发降级为占位。"""
+    if segment_type == "forward":
+        return MessageSegment.text("[合并转发]")
+    return None  # video / record
+
+
+async def _sanitize_archived_segment(segment: MessageSegment) -> Message | MessageSegment | None:
     """清洗归档消息段，去掉会导致历史回放失败的冗余字段。"""
     segment_type = segment.type
 
@@ -161,18 +169,20 @@ def _sanitize_archived_segment(segment: MessageSegment) -> Message | MessageSegm
         return MessageSegment.at(qq) if qq is not None else None
     if segment_type == "face":
         return _build_face_segment(segment)
-    if segment_type in {"image", "video", "record"}:
-        return _build_media_segment(segment_type, segment)
+    if segment_type == "image":
+        return await _build_image_segment(segment)
+    if segment_type in {"video", "record", "forward"}:
+        return _sanitize_unreplayable_media(segment_type)
     if segment_type in {"json", "xml"}:
         return _build_data_segment(segment_type, segment)
     return segment
 
 
-def build_forward_content(message: ArchivedMessage) -> Message:
+async def build_forward_content(message: ArchivedMessage) -> Message:
     """根据归档内容重建可稳定发送的消息。"""
     content = Message()
     for segment in Message(message.message_cq):
-        sanitized = _sanitize_archived_segment(segment)
+        sanitized = await _sanitize_archived_segment(segment)
         if sanitized is None:
             continue
         if isinstance(sanitized, Message):
@@ -187,23 +197,26 @@ def build_forward_content(message: ArchivedMessage) -> Message:
     return Message("[暂不支持回放的消息]")
 
 
-def build_forward_nodes(messages: list[ArchivedMessage]) -> list[dict[str, Any]]:
+async def build_forward_nodes(messages: list[ArchivedMessage]) -> list[dict[str, Any]]:
     """构建合并转发节点。
 
     使用归档内容重建转发节点，确保重启后仍可回放历史消息。
     """
-    return [
-        {
-            "type": "node",
-            "data": {
-                "name": message.sender_name,
-                "uin": message.user_id,
-                "content": build_forward_content(message),
-            },
-        }
-        for message in messages
-        if message.message_cq
-    ]
+    nodes: list[dict[str, Any]] = []
+    for message in messages:
+        if not message.message_cq:
+            continue
+        nodes.append(
+            {
+                "type": "node",
+                "data": {
+                    "name": message.sender_name,
+                    "uin": message.user_id,
+                    "content": await build_forward_content(message),
+                },
+            }
+        )
+    return nodes
 
 
 async def _parse_or_finish(event: MessageEvent) -> ChatForwardRequest:
@@ -275,7 +288,7 @@ async def handle_chat_forward(bot: Bot, event: MessageEvent) -> None:
     if not messages:
         await chat_forward.finish("没有获取到消息记录")
 
-    forward_nodes = build_forward_nodes(messages)
+    forward_nodes = await build_forward_nodes(messages)
     if not forward_nodes:
         await chat_forward.finish("没有可打包的消息")
 

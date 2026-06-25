@@ -1,4 +1,4 @@
-from nonebot import get_driver, get_plugin_config, logger
+from nonebot import get_driver, get_plugin_config, logger, require
 from nonebot.adapters.onebot.v11 import Event, MessageEvent
 from nonebot.message import event_preprocessor
 from nonebot.plugin import PluginMetadata
@@ -6,6 +6,7 @@ from nonebot.plugin import PluginMetadata
 from ..group_permission import check_group_permission
 from .config import Config
 from .db import archive_message_event, ensure_schema
+from .image_store import purge_expired, purge_orphans
 
 __plugin_meta__ = PluginMetadata(
     name="message_archive",
@@ -16,6 +17,7 @@ __plugin_meta__ = PluginMetadata(
 
 config: Config = get_plugin_config(Config)
 driver = get_driver()
+scheduler = require("nonebot_plugin_apscheduler").scheduler
 
 
 def _is_archive_enabled(event: Event) -> bool:
@@ -30,8 +32,25 @@ def _is_archive_enabled(event: Event) -> bool:
 
 @driver.on_startup
 async def init_message_archive_schema() -> None:
-    """在 NoneBot 启动时初始化消息归档表。"""
+    """启动时初始化表结构并清理过期/孤儿图片。"""
     ensure_schema()
+    try:
+        expired = await purge_expired()
+        orphans = await purge_orphans()
+        if expired or orphans:
+            logger.info(f"图片清理：过期 {expired} 张，孤儿 {orphans} 张")
+    except Exception as e:
+        logger.warning(f"启动图片清理失败: {e}", exc_info=True)
+
+
+@scheduler.scheduled_job("cron", hour=4, minute=15)
+async def daily_purge_message_archive_images() -> None:
+    """每天 04:15 清理过期图片。"""
+    try:
+        await purge_expired()
+        await purge_orphans()
+    except Exception as e:
+        logger.warning(f"定时图片清理失败: {e}", exc_info=True)
 
 
 @event_preprocessor

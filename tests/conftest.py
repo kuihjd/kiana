@@ -69,6 +69,7 @@ async def reset_message_archive_table() -> None:
 
     ensure_schema()
     await get_db().execute("DELETE FROM message_archive")
+    await get_db().execute("DELETE FROM message_archive_image")
 
 
 @pytest_asyncio.fixture

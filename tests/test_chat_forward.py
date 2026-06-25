@@ -1,7 +1,13 @@
 from datetime import datetime
 
 import pytest
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    Message,
+    MessageSegment,
+    PrivateMessageEvent,
+)
 from nonebot.adapters.onebot.v11.event import Sender
 from nonebug import App
 
@@ -343,10 +349,19 @@ async def test_chat_forward_replays_from_archived_content_instead_of_message_id(
 
 
 @pytest.mark.asyncio
-async def test_chat_forward_replaces_archived_image_with_placeholder(app: App) -> None:
-    """历史图片回放失败风险较高时，应降级为文本占位而不是原样重放。"""
+async def test_chat_forward_degrades_image_when_not_cached(app: App, tmp_path, monkeypatch) -> None:
+    """本地无图片文件时（未持久化或已过期清理），image 段降级为 [图片] 占位。"""
     from src.plugins.chat_forward import chat_forward
+    from src.plugins.message_archive import image_store
     from src.plugins.message_archive.db import archive_message_event
+
+    # image_dir 指向空目录，确保回放时查不到本地文件
+    monkeypatch.setattr(image_store, "image_dir", tmp_path)
+    # 归档时图片下载失败，不落盘
+    async def _fail_fetch(url: object) -> bytes:
+        raise OSError("download disabled in test")
+
+    monkeypatch.setattr(image_store, "_fetch_bytes", _fail_fetch)
 
     archived_message = Message(
         [
@@ -355,6 +370,8 @@ async def test_chat_forward_replaces_archived_image_with_placeholder(app: App) -
             MessageSegment.text(" 完毕"),
         ]
     )
+    archived_message[1].data["file"] = "NOTCACHED.png"
+    archived_message[1].data["url"] = "https://example.com/demo.png"
     await archive_message_event(
         create_group_event(
             archived_message,
@@ -394,4 +411,58 @@ async def test_chat_forward_replaces_archived_image_with_placeholder(app: App) -
                 ],
             },
             result={"message_id": 1005},
+        )
+
+
+@pytest.mark.asyncio
+async def test_chat_forward_replays_real_image_when_cached(app: App, tmp_path, monkeypatch) -> None:
+    """本地有图片文件时，回放出真实 image 段而非 [图片] 占位。"""
+    from src.plugins.chat_forward import chat_forward
+    from src.plugins.message_archive import image_store
+    from src.plugins.message_archive.db import archive_message_event
+
+    monkeypatch.setattr(image_store, "image_dir", tmp_path)
+
+    # 预置本地图片（绕过下载，直接落盘 + 登记元数据）
+    target = tmp_path / "ab" / "abcdef.png"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"\x89PNG fake")
+    await image_store.record_image_meta("abcdef", str(target), expire_at=9999999999)
+
+    archived = Message(
+        [MessageSegment.text("看图 "), MessageSegment.image("https://e.com/a.png")]
+    )
+    archived[1].data["file"] = "ABCDEF.png"
+    await archive_message_event(
+        create_group_event(archived, message_id=81, group_id=60001, nickname="用户A")
+    )
+
+    async with app.test_matcher(chat_forward) as ctx:
+        bot = ctx.create_bot(base=Bot, self_id="987654321")
+        event = create_group_event("打包消息 1", message_id=999, group_id=60001)
+
+        expect_bot_not_muted(ctx, group_id=60001)
+        ctx.receive_event(bot, event)
+        ctx.should_pass_rule()
+        ctx.should_call_api(
+            "send_group_forward_msg",
+            {
+                "group_id": 60001,
+                "messages": [
+                    {
+                        "type": "node",
+                        "data": {
+                            "name": "用户A",
+                            "uin": "123456",
+                            "content": Message(
+                                [
+                                    MessageSegment.text("看图 "),
+                                    MessageSegment.image(b"\x89PNG fake"),
+                                ]
+                            ),
+                        },
+                    }
+                ],
+            },
+            result={"message_id": 1006},
         )

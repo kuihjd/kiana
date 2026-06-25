@@ -120,7 +120,7 @@ async def test_archive_preserves_cq_message_for_forward_replay() -> None:
     await archive_message_event(event)
 
     messages = await fetch_session_messages("group", "20002", 10)
-    forward_nodes = build_forward_nodes(messages)
+    forward_nodes = await build_forward_nodes(messages)
 
     assert len(messages) == 1
     assert messages[0].message_cq == "hello [CQ:at,qq=123456]"
@@ -148,7 +148,7 @@ async def test_archive_rebuilds_face_segment_for_forward_replay() -> None:
     await archive_message_event(event)
 
     messages = await fetch_session_messages("group", "20003", 10)
-    forward_nodes = build_forward_nodes(messages)
+    forward_nodes = await build_forward_nodes(messages)
 
     assert forward_nodes == [
         {
@@ -160,10 +160,11 @@ async def test_archive_rebuilds_face_segment_for_forward_replay() -> None:
             },
         }
     ]
-    assert build_forward_content(messages[0]) == Message([MessageSegment.face(123)])
+    assert await build_forward_content(messages[0]) == Message([MessageSegment.face(123)])
 
 
-def test_build_forward_content_strips_face_raw_and_replaces_image_with_placeholder() -> None:
+@pytest.mark.asyncio
+async def test_build_forward_content_strips_face_raw_and_replaces_image_with_placeholder() -> None:
     """回放内容应移除危险字段，并将历史图片降级为占位文本。"""
     from src.plugins.chat_forward import build_forward_content
     from src.plugins.message_archive.db import ArchivedMessage
@@ -198,13 +199,14 @@ def test_build_forward_content_strips_face_raw_and_replaces_image_with_placehold
         plain_text="",
     )
 
-    assert build_forward_content(face_message) == Message(
+    assert await build_forward_content(face_message) == Message(
         [MessageSegment.face(344), MessageSegment.text("外面太疯狂了")]
     )
-    assert build_forward_content(image_message) == Message([MessageSegment.text("[图片]")])
+    assert await build_forward_content(image_message) == Message([MessageSegment.text("[图片]")])
 
 
-def test_build_forward_content_skips_video_and_replaces_image_with_placeholder() -> None:
+@pytest.mark.asyncio
+async def test_build_forward_content_skips_video_and_replaces_image_with_placeholder() -> None:
     """视频应被跳过，图片应降级为占位文本。"""
     from src.plugins.chat_forward import build_forward_content
     from src.plugins.message_archive.db import ArchivedMessage
@@ -226,7 +228,7 @@ def test_build_forward_content_skips_video_and_replaces_image_with_placeholder()
         plain_text="",
     )
 
-    assert build_forward_content(mixed_message) == Message([MessageSegment.text("[图片]")])
+    assert await build_forward_content(mixed_message) == Message([MessageSegment.text("[图片]")])
 
 
 @pytest.mark.asyncio
@@ -238,3 +240,113 @@ async def test_archive_database_failure_is_swallowed() -> None:
 
     with patch("src.plugins.message_archive.archive_message_event", side_effect=RuntimeError("db down")):
         await archive_received_message(event)
+
+
+@pytest.mark.asyncio
+async def test_archive_persists_image_when_enabled(tmp_path, monkeypatch) -> None:
+    """归档含图片消息时，图片被下载落盘并登记元数据。"""
+    from src.plugins.message_archive import image_store
+    from src.plugins.message_archive.db import archive_message_event
+    from tests.message_store_helpers import make_image_bytes
+
+    monkeypatch.setattr(image_store, "image_dir", tmp_path)
+
+    async def _fake_fetch(url: object) -> bytes:
+        return make_image_bytes(16)
+
+    monkeypatch.setattr(image_store, "_fetch_bytes", _fake_fetch)
+
+    msg = Message(
+        [MessageSegment.text("看图 "), MessageSegment.image("https://e.com/a.png")]
+    )
+    msg[1].data["file"] = "ABCDEF0123456789.png"
+    msg[1].data["url"] = "https://e.com/a.png"
+
+    await archive_message_event(
+        create_group_message_event(msg, message_id=71, group_id=50001)
+    )
+
+    row = await image_store.get_image_meta("abcdef0123456789")
+    assert row is not None
+    assert row["file_hash"] == "abcdef0123456789"
+
+
+@pytest.mark.asyncio
+async def test_archive_skips_image_when_disabled(tmp_path, monkeypatch) -> None:
+    """image_enabled=False 时不下载图片。"""
+    from src.plugins.message_archive import image_store, db as archive_db
+    from src.plugins.message_archive.db import archive_message_event
+
+    monkeypatch.setattr(image_store, "image_dir", tmp_path)
+
+    async def _should_not_call(url: object) -> bytes:
+        raise RuntimeError("不应调用下载")
+
+    monkeypatch.setattr(image_store, "_fetch_bytes", _should_not_call)
+    monkeypatch.setattr(
+        archive_db.config, "message_archive_image_enabled", False
+    )
+
+    msg = Message([MessageSegment.image("https://e.com/a.png")])
+    msg[0].data["file"] = "NOPE.png"
+    await archive_message_event(
+        create_group_message_event(msg, message_id=72, group_id=50002)
+    )
+    # 无异常即通过
+
+
+@pytest.mark.asyncio
+async def test_archive_caps_image_count(tmp_path, monkeypatch) -> None:
+    """单条消息图片数超过 max_count 时只存前 N 张。"""
+    from src.plugins.message_archive import image_store, db as archive_db
+    from src.plugins.message_archive.db import archive_message_event
+    from tests.message_store_helpers import make_image_bytes
+
+    monkeypatch.setattr(image_store, "image_dir", tmp_path)
+
+    async def _fake_fetch(url: object) -> bytes:
+        return make_image_bytes(8)
+
+    monkeypatch.setattr(image_store, "_fetch_bytes", _fake_fetch)
+    monkeypatch.setattr(
+        archive_db.config, "message_archive_image_max_count", 2
+    )
+
+    segs = []
+    for i in range(5):
+        seg = MessageSegment.image(f"https://e.com/{i}.png")
+        seg.data["file"] = f"HASH{i:030d}.png"
+        seg.data["url"] = f"https://e.com/{i}.png"
+        segs.append(seg)
+    await archive_message_event(
+        create_group_message_event(Message(segs), message_id=73, group_id=50003)
+    )
+
+    for i in range(2):
+        assert await image_store.get_image_meta(f"hash{i:030d}") is not None
+    for i in range(2, 5):
+        assert await image_store.get_image_meta(f"hash{i:030d}") is None
+
+
+@pytest.mark.asyncio
+async def test_build_forward_content_degrades_forward_segment_to_placeholder() -> None:
+    """归档的合并转发段无法稳定回放，应降级为占位文本而非原样返回。"""
+    from src.plugins.chat_forward import build_forward_content
+    from src.plugins.message_archive.db import ArchivedMessage
+
+    forward_message = ArchivedMessage(
+        id=4,
+        session_type="group",
+        session_id="1",
+        message_id=4,
+        event_time=4,
+        self_id="1",
+        user_id="123456",
+        group_id="1",
+        sender_name="测试用户",
+        message_cq="[CQ:forward,id=7620746102359544721]",
+        plain_text="",
+    )
+
+    content = await build_forward_content(forward_message)
+    assert content == Message([MessageSegment.text("[合并转发]")])

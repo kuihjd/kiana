@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Literal
 
+from nonebot import get_plugin_config
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent
 
 from src.storage import get_db
 
+from .config import Config
+from .image_store import extract_file_hash, record_image_meta, store_image
+
 SessionType = Literal["group", "private"]
 
 db = get_db()
+config = get_plugin_config(Config)
 
 
 @dataclass(slots=True)
@@ -54,6 +60,18 @@ def ensure_schema() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_message_archive_session_user_time
             ON message_archive (session_type, session_id, user_id, event_time, id)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS message_archive_image (
+                file_hash   TEXT PRIMARY KEY,
+                file_path   TEXT NOT NULL,
+                archived_at INTEGER NOT NULL,
+                expire_at   INTEGER NOT NULL
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_message_archive_image_expire
+            ON message_archive_image (expire_at)
             """,
         ]
     )
@@ -108,6 +126,35 @@ async def archive_message_event(event: MessageEvent) -> None:
             event.original_message.extract_plain_text(),
         ),
     )
+
+    await _persist_images(event)
+
+
+async def _persist_images(event: MessageEvent) -> None:
+    """归档消息中的图片到本地。失败只 warning，不影响文本归档。"""
+    if not config.message_archive_image_enabled:
+        return
+
+    image_segments = [seg for seg in event.original_message if seg.type == "image"]
+    if not image_segments:
+        return
+
+    max_count = config.message_archive_image_max_count
+    max_size_bytes = config.message_archive_image_max_size_mb * 1024 * 1024
+    expire_at = int(time.time()) + config.message_archive_image_retention_days * 86400
+
+    for seg in image_segments[:max_count]:
+        url = seg.data.get("url")
+        file_field = str(seg.data.get("file", ""))
+        if not url or not file_field:
+            continue
+        file_hash = extract_file_hash(file_field)
+        if not file_hash:
+            continue
+        path = await store_image(str(url), file_hash, max_size_bytes)
+        if path is None:
+            continue
+        await record_image_meta(file_hash, str(path), expire_at)
 
 
 async def fetch_session_messages(
